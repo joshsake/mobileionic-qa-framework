@@ -1,0 +1,34 @@
+node_modules/
+dist/
+www/
+.angular/
+android/
+ios/
+*.apk
+*.ipa
+
+# .NET
+api/dotnet-api/bin/
+api/dotnet-api/obj/
+*.user
+*.suo
+
+# Test outputs
+tests/reports/allure-results/
+tests/reports/allure-report/
+test-results/
+playwright-report/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+*.log

@@ -1,0 +1,23 @@
+{
+  "name": "mobile-qa-framework",
+  "version": "1.0.0",
+  "description": "Mobile QA automation prototype framework — Ionic/Capacitor fitness app with Playwright + Appium test suites",
+  "private": true,
+  "scripts": {
+    "app:start": "cd app && npm start",
+    "app:build": "cd app && npm run build",
+    "mock:start": "cd api/mock-server && npm start",
+    "test:api": "cd tests && npx playwright test --project=api",
+    "test:web": "cd tests && npx playwright test --project=web",
+    "test:mobile": "cd tests && npx wdio run ./e2e-mobile/wdio.conf.ts",
+    "test:perf": "cd tests/performance && npx k6 run load-test.js",
+    "test:all": "npm run test:api && npm run test:web",
+    "report:generate": "cd tests && npx allure generate reports/allure-results --clean -o reports/allure-report",
+    "report:open": "cd tests && npx allure open reports/allure-report",
+    "docker:api": "cd api/dotnet-api && docker-compose up -d",
+    "docker:api:down": "cd api/dotnet-api && docker-compose down"
+  },
+  "keywords": ["qa", "automation", "mobile-testing", "ionic", "capacitor", "playwright", "appium"],
+  "author": "",
+  "license": "MIT"
+}

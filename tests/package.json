@@ -1,0 +1,25 @@
+{
+  "name": "fitness-tracker-tests",
+  "version": "1.0.0",
+  "description": "Playwright E2E + API test suite for the Ionic fitness tracker app",
+  "scripts": {
+    "test": "npx playwright test",
+    "test:api": "npx playwright test --project=api",
+    "test:web": "npx playwright test --project=web",
+    "test:headed": "npx playwright test --project=web --headed",
+    "test:debug": "npx playwright test --debug",
+    "report:allure": "npx allure generate reports/allure-results --clean -o reports/allure-report && npx allure open reports/allure-report",
+    "report:html": "npx playwright show-report reports/html-report",
+    "install:browsers": "npx playwright install chromium"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.48.0",
+    "allure-playwright": "^3.0.0",
+    "ajv": "^8.17.0",
+    "dotenv": "^16.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}

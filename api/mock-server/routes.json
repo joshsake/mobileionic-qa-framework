@@ -1,0 +1,9 @@
+{
+  "/api/auth/login": "/login",
+  "/api/auth/register": "/register",
+  "/api/workouts": "/workouts",
+  "/api/workouts/:id": "/workouts/:id",
+  "/api/profile": "/users/:id",
+  "/api/analytics/summary": "/analytics",
+  "/api/analytics/summary/:userId": "/analytics/:userId"
+}

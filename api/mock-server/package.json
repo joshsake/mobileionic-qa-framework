@@ -1,0 +1,20 @@
+{
+  "name": "fitness-mock-api",
+  "version": "1.0.0",
+  "description": "JSON Server mock API for fitness tracker — mirrors the .NET API shape for local QA testing",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "start:watch": "npx nodemon server.js",
+    "reset-db": "node -e \"const fs=require('fs');fs.copyFileSync('db.seed.json','db.json');console.log('DB reset to seed data.');\""
+  },
+  "dependencies": {
+    "json-server": "^0.17.4",
+    "jsonwebtoken": "^9.0.2",
+    "cors": "^2.8.5",
+    "bcryptjs": "^2.4.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}

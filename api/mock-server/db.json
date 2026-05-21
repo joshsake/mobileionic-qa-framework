@@ -1,0 +1,221 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "email": "test@example.com",
+      "passwordHash": "$2a$10$dummyhash1fortest",
+      "displayName": "Test User",
+      "createdAt": "2025-01-15T10:00:00.000Z"
+    },
+    {
+      "id": 2,
+      "email": "admin@example.com",
+      "passwordHash": "$2a$10$dummyhash2foradmin",
+      "displayName": "Admin User",
+      "createdAt": "2025-01-10T08:30:00.000Z"
+    },
+    {
+      "id": 3,
+      "email": "user2@example.com",
+      "passwordHash": "$2a$10$dummyhash3foruser2",
+      "displayName": "Jane Doe",
+      "createdAt": "2025-02-01T14:00:00.000Z"
+    }
+  ],
+  "workouts": [
+    {
+      "id": 1,
+      "userId": 1,
+      "exerciseType": "Running",
+      "durationMinutes": 30,
+      "notes": "Morning jog around the park",
+      "date": "2025-05-01T07:00:00.000Z",
+      "createdAt": "2025-05-01T07:35:00.000Z"
+    },
+    {
+      "id": 2,
+      "userId": 1,
+      "exerciseType": "Cycling",
+      "durationMinutes": 45,
+      "notes": "Bike ride to work and back",
+      "date": "2025-05-02T08:00:00.000Z",
+      "createdAt": "2025-05-02T08:50:00.000Z"
+    },
+    {
+      "id": 3,
+      "userId": 1,
+      "exerciseType": "Swimming",
+      "durationMinutes": 60,
+      "notes": "Lap swimming at community pool",
+      "date": "2025-05-03T17:00:00.000Z",
+      "createdAt": "2025-05-03T18:05:00.000Z"
+    },
+    {
+      "id": 4,
+      "userId": 1,
+      "exerciseType": "Yoga",
+      "durationMinutes": 40,
+      "notes": "Vinyasa flow session",
+      "date": "2025-05-04T06:30:00.000Z",
+      "createdAt": "2025-05-04T07:15:00.000Z"
+    },
+    {
+      "id": 5,
+      "userId": 1,
+      "exerciseType": "Weight Training",
+      "durationMinutes": 50,
+      "notes": "Upper body — bench press, rows, curls",
+      "date": "2025-05-05T16:00:00.000Z",
+      "createdAt": "2025-05-05T16:55:00.000Z"
+    },
+    {
+      "id": 6,
+      "userId": 2,
+      "exerciseType": "Running",
+      "durationMinutes": 25,
+      "notes": "Quick treadmill run",
+      "date": "2025-05-01T12:00:00.000Z",
+      "createdAt": "2025-05-01T12:30:00.000Z"
+    },
+    {
+      "id": 7,
+      "userId": 2,
+      "exerciseType": "Weight Training",
+      "durationMinutes": 60,
+      "notes": "Leg day — squats, deadlifts, lunges",
+      "date": "2025-05-02T15:00:00.000Z",
+      "createdAt": "2025-05-02T16:05:00.000Z"
+    },
+    {
+      "id": 8,
+      "userId": 2,
+      "exerciseType": "Cycling",
+      "durationMinutes": 90,
+      "notes": "Long weekend ride through countryside",
+      "date": "2025-05-03T09:00:00.000Z",
+      "createdAt": "2025-05-03T10:35:00.000Z"
+    },
+    {
+      "id": 9,
+      "userId": 2,
+      "exerciseType": "Yoga",
+      "durationMinutes": 30,
+      "notes": "Recovery stretching routine",
+      "date": "2025-05-04T07:00:00.000Z",
+      "createdAt": "2025-05-04T07:35:00.000Z"
+    },
+    {
+      "id": 10,
+      "userId": 2,
+      "exerciseType": "Swimming",
+      "durationMinutes": 45,
+      "notes": "Open water swim practice",
+      "date": "2025-05-05T14:00:00.000Z",
+      "createdAt": "2025-05-05T14:50:00.000Z"
+    },
+    {
+      "id": 11,
+      "userId": 3,
+      "exerciseType": "Running",
+      "durationMinutes": 35,
+      "notes": "Interval training — 400m repeats",
+      "date": "2025-05-01T06:00:00.000Z",
+      "createdAt": "2025-05-01T06:40:00.000Z"
+    },
+    {
+      "id": 12,
+      "userId": 3,
+      "exerciseType": "Weight Training",
+      "durationMinutes": 55,
+      "notes": "Full body circuit training",
+      "date": "2025-05-02T17:00:00.000Z",
+      "createdAt": "2025-05-02T18:00:00.000Z"
+    },
+    {
+      "id": 13,
+      "userId": 3,
+      "exerciseType": "Cycling",
+      "durationMinutes": 40,
+      "notes": "Spin class at the gym",
+      "date": "2025-05-03T10:00:00.000Z",
+      "createdAt": "2025-05-03T10:45:00.000Z"
+    },
+    {
+      "id": 14,
+      "userId": 3,
+      "exerciseType": "Yoga",
+      "durationMinutes": 60,
+      "notes": "Hot yoga — Bikram style",
+      "date": "2025-05-04T18:00:00.000Z",
+      "createdAt": "2025-05-04T19:05:00.000Z"
+    },
+    {
+      "id": 15,
+      "userId": 3,
+      "exerciseType": "Swimming",
+      "durationMinutes": 50,
+      "notes": "Backstroke drills and cool-down",
+      "date": "2025-05-05T11:00:00.000Z",
+      "createdAt": "2025-05-05T11:55:00.000Z"
+    }
+  ],
+  "analytics": [
+    {
+      "id": 1,
+      "userId": 1,
+      "totalWorkouts": 5,
+      "totalMinutes": 225,
+      "averageDuration": 45,
+      "workoutsByType": {
+        "Running": 1,
+        "Cycling": 1,
+        "Swimming": 1,
+        "Yoga": 1,
+        "Weight Training": 1
+      },
+      "weeklyBreakdown": [
+        { "week": "2025-W18", "workouts": 5, "minutes": 225 }
+      ],
+      "streak": 5,
+      "lastWorkoutDate": "2025-05-05T16:00:00.000Z"
+    },
+    {
+      "id": 2,
+      "userId": 2,
+      "totalWorkouts": 5,
+      "totalMinutes": 250,
+      "averageDuration": 50,
+      "workoutsByType": {
+        "Running": 1,
+        "Cycling": 1,
+        "Swimming": 1,
+        "Yoga": 1,
+        "Weight Training": 1
+      },
+      "weeklyBreakdown": [
+        { "week": "2025-W18", "workouts": 5, "minutes": 250 }
+      ],
+      "streak": 5,
+      "lastWorkoutDate": "2025-05-05T14:00:00.000Z"
+    },
+    {
+      "id": 3,
+      "userId": 3,
+      "totalWorkouts": 5,
+      "totalMinutes": 240,
+      "averageDuration": 48,
+      "workoutsByType": {
+        "Running": 1,
+        "Cycling": 1,
+        "Swimming": 1,
+        "Yoga": 1,
+        "Weight Training": 1
+      },
+      "weeklyBreakdown": [
+        { "week": "2025-W18", "workouts": 5, "minutes": 240 }
+      ],
+      "streak": 5,
+      "lastWorkoutDate": "2025-05-05T11:00:00.000Z"
+    }
+  ]
+}

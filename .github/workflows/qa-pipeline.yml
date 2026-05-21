@@ -1,0 +1,376 @@
+name: QA Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: qa-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20'
+  DOTNET_VERSION: '8.0'
+
+jobs:
+  lint-and-typecheck:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: |
+            app/package-lock.json
+            tests/package-lock.json
+
+      - name: Install app dependencies
+        run: npm ci
+        working-directory: app
+
+      - name: Install test dependencies
+        run: npm ci
+        working-directory: tests
+
+      - name: Run ESLint on app
+        run: npx eslint src/ --ext .ts --max-warnings 0
+        working-directory: app
+        continue-on-error: false
+
+      - name: Run ESLint on tests
+        run: npx eslint . --ext .ts --max-warnings 0
+        working-directory: tests
+        continue-on-error: false
+
+      - name: TypeScript type check (app)
+        run: npx tsc --noEmit
+        working-directory: app
+
+      - name: TypeScript type check (tests)
+        run: npx tsc --noEmit --project tsconfig.json
+        working-directory: tests
+
+  api-tests:
+    name: API Tests
+    needs: lint-and-typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: |
+            api/mock-server/package-lock.json
+            tests/package-lock.json
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache .NET packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('api/dotnet-api/*.csproj') }}
+          restore-keys: ${{ runner.os }}-nuget-
+
+      - name: Install mock server dependencies
+        run: npm ci
+        working-directory: api/mock-server
+
+      - name: Install test dependencies
+        run: npm ci
+        working-directory: tests
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+        working-directory: tests
+
+      - name: Start mock server
+        run: npm start &
+        working-directory: api/mock-server
+        env:
+          PORT: 5000
+
+      - name: Wait for mock server
+        run: |
+          for i in $(seq 1 30); do
+            curl -s http://localhost:5000/api/health && break
+            echo "Waiting for mock server... ($i/30)"
+            sleep 2
+          done
+
+      - name: Run API tests
+        run: npx playwright test --project=api
+        working-directory: tests
+        env:
+          API_BASE_URL: http://localhost:5000/api
+
+      - name: Upload Allure results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-api
+          path: tests/reports/allure-results/
+          retention-days: 14
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-test-report
+          path: tests/reports/
+          retention-days: 14
+
+  e2e-web-tests:
+    name: E2E Web Tests (${{ matrix.browser }})
+    needs: lint-and-typecheck
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, mobile-chrome]
+        include:
+          - browser: chromium
+            project: web-chromium
+          - browser: firefox
+            project: web-firefox
+          - browser: mobile-chrome
+            project: web-mobile-chrome
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: |
+            app/package-lock.json
+            api/mock-server/package-lock.json
+            tests/package-lock.json
+
+      - name: Install app dependencies
+        run: npm ci
+        working-directory: app
+
+      - name: Install mock server dependencies
+        run: npm ci
+        working-directory: api/mock-server
+
+      - name: Install test dependencies
+        run: npm ci
+        working-directory: tests
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+        working-directory: tests
+
+      - name: Start mock server
+        run: npm start &
+        working-directory: api/mock-server
+        env:
+          PORT: 5000
+
+      - name: Build and serve Ionic app
+        run: |
+          npm run build
+          npx serve -s dist/fitness-tracker/browser -l 4200 &
+        working-directory: app
+        env:
+          CI: true
+
+      - name: Wait for app server
+        run: |
+          for i in $(seq 1 30); do
+            curl -s http://localhost:4200 && break
+            echo "Waiting for app server... ($i/30)"
+            sleep 2
+          done
+
+      - name: Run E2E web tests
+        run: npx playwright test --project=${{ matrix.project }}
+        working-directory: tests
+        env:
+          BASE_URL: http://localhost:4200
+          API_BASE_URL: http://localhost:5000/api
+
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots-${{ matrix.browser }}
+          path: tests/reports/screenshots/
+          retention-days: 14
+
+      - name: Upload Allure results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-web-${{ matrix.browser }}
+          path: tests/reports/allure-results/
+          retention-days: 14
+
+  e2e-mobile-tests:
+    name: E2E Mobile Tests (Android)
+    needs: lint-and-typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: |
+            app/package-lock.json
+            api/mock-server/package-lock.json
+            tests/e2e-mobile/package-lock.json
+
+      - name: Setup Java (for Android SDK)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install app dependencies
+        run: npm ci
+        working-directory: app
+
+      - name: Install mock server dependencies
+        run: npm ci
+        working-directory: api/mock-server
+
+      - name: Install mobile test dependencies
+        run: npm ci
+        working-directory: tests/e2e-mobile
+
+      - name: Build Ionic app
+        run: npm run build
+        working-directory: app
+
+      - name: Add Android platform via Capacitor
+        run: npx cap add android || true
+        working-directory: app
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+        working-directory: app
+
+      - name: Build Android APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+        working-directory: app
+
+      - name: Start mock server
+        run: npm start &
+        working-directory: api/mock-server
+        env:
+          PORT: 5000
+
+      - name: Run Appium tests on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 33
+          target: google_apis
+          arch: x86_64
+          profile: Pixel 6
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          disable-animations: true
+          script: |
+            adb wait-for-device
+            adb shell settings put global window_animation_scale 0
+            adb shell settings put global transition_animation_scale 0
+            adb shell settings put global animator_duration_scale 0
+            cd tests/e2e-mobile
+            npx wdio run ./wdio.conf.ts
+
+      - name: Upload Appium logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: appium-logs
+          path: tests/reports/appium-logs/
+          retention-days: 14
+
+      - name: Upload mobile test screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-screenshots
+          path: tests/reports/screenshots/
+          retention-days: 14
+
+      - name: Upload Allure results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-mobile
+          path: tests/reports/allure-results/
+          retention-days: 14
+
+  generate-report:
+    name: Generate Combined Report
+    needs: [api-tests, e2e-web-tests, e2e-mobile-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all Allure results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: allure-results-*
+          path: allure-results
+          merge-multiple: true
+
+      - name: Setup Java for Allure
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install Allure CLI
+        run: |
+          curl -sL https://github.com/allure-framework/allure2/releases/download/2.27.0/allure-2.27.0.tgz | tar -xz
+          echo "$PWD/allure-2.27.0/bin" >> $GITHUB_PATH
+
+      - name: Generate combined Allure report
+        run: allure generate allure-results --clean -o allure-report
+
+      - name: Upload combined report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report
+          path: allure-report/
+          retention-days: 30
+
+      - name: Deploy report to GitHub Pages
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./allure-report
+          destination_dir: qa-report
