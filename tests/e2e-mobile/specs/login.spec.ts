@@ -22,8 +22,15 @@ describe('Login Screen - Mobile', () => {
   };
 
   beforeEach(async () => {
-    // Restart the app to ensure a fresh login screen. waitForLoginScreen()
-    // re-selects the WEBVIEW context, which the relaunch invalidates.
+    // Restart the app to ensure a fresh login screen.
+    //
+    // Switch to the native context FIRST. After the previous test the driver is
+    // attached to the webview; terminating the app tears that renderer down, and
+    // any later command issued from the dead webview context fails with
+    // "disconnected: unable to connect to renderer". The native context survives
+    // a relaunch, so app management runs from there. waitForLoginScreen() then
+    // re-selects the fresh webview.
+    await loginScreen.switchToNative().catch(() => {});
     await driver.terminateApp('com.qaframework.fitnesstracker', {});
     await driver.activateApp('com.qaframework.fitnesstracker');
     await loginScreen.waitForLoginScreen();

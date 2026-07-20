@@ -36,9 +36,21 @@ export class BaseScreen {
     let seen: string[] = [];
 
     while (Date.now() - start < timeoutMs) {
-      const contexts = (await driver.getContexts()) as string[];
-      seen = contexts.map((c) => c.toString());
+      let contexts: string[];
+      try {
+        contexts = (await driver.getContexts()) as string[];
+      } catch {
+        // getContexts() talks to the current context's remote end. If that is a
+        // webview whose renderer was torn down (e.g. the app was just
+        // relaunched), the call fails with "disconnected: unable to connect to
+        // renderer". Drop back to the native context, which always survives,
+        // and retry — the fresh webview will be enumerable from there.
+        await driver.switchContext('NATIVE_APP').catch(() => {});
+        await browser.pause(500);
+        continue;
+      }
 
+      seen = contexts.map((c) => c.toString());
       const webview = seen.find((c) => c.includes('WEBVIEW'));
       if (webview) {
         const current = (await driver.getContext())?.toString();
