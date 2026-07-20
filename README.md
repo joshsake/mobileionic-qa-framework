@@ -179,14 +179,38 @@ they are.
 | API + contract tests | Green in CI |
 | Web E2E (Chromium, Firefox, Mobile Chrome) | Green in CI |
 | Allure report generation | Green in CI |
-| Mobile E2E (Appium/Android) | **Not yet validated against a live emulator** |
+| Mobile E2E (Appium/Android) | **Known broken — excluded from CI, manual trigger only** |
 | k6 performance | Runs nightly; verified by desk-check and simulation, not yet by a real k6 run |
 
-**Mobile E2E is advisory, not a merge gate.** The emulator job builds the app,
-adds the Capacitor Android platform and produces a debug APK, but the Appium
-specs have not been proven against a booted device. Driving a Capacitor app
-also requires native/webview context switching, which the screen objects do not
-yet handle. Treat that suite as scaffolding until a run goes green.
+**Mobile E2E cannot pass as written, and this is a selector-strategy bug rather
+than an environment problem.** The build half works: CI adds the Capacitor
+Android platform, Gradle produces a debug APK, and with KVM enabled the
+emulator boots and Appium attaches. The specs then fail, because the screen
+objects locate elements with the accessibility-id strategy:
+
+```ts
+return $(`~${this.selectors.emailInput}`);   // ~login-email-input
+```
+
+`data-testid` is a DOM attribute inside the Capacitor WebView, not an Android
+accessibility id, and nothing in the suite switches out of the `NATIVE_APP`
+context. UiAutomator2 therefore never resolves those selectors and every spec
+waits out its full 60s timeout.
+
+Fixing it means switching to the `WEBVIEW_com.qaframework.fitnesstracker`
+context after launch and using CSS selectors (`[data-testid="..."]`) — a
+contained change to `base.screen.ts` and the per-screen selector strategy.
+
+Until then the job is excluded from the PR pipeline and gated behind the
+nightly workflow's manual trigger. That is not cosmetic: each run burned 45
+minutes to reach a guaranteed failure, and because a timed-out job is
+*cancelled* rather than failed, `continue-on-error` did not stop it from taking
+the whole run's conclusion down with it.
+
+```bash
+# Run it deliberately once the context switching is implemented
+gh workflow run "Nightly Regression"
+```
 
 **Two known defects are documented rather than papered over:**
 

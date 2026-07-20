@@ -220,117 +220,23 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
-  e2e-mobile-tests:
-    name: E2E Mobile Tests (Android)
-    needs: lint-and-typecheck
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    # Advisory, not a merge gate. The Android emulator job needs a Capacitor
-    # platform to be generated, a Gradle debug build and a booted AVD; any of
-    # those can fail for reasons unrelated to the change under review. It runs
-    # so the results are visible, but a red emulator does not block a PR.
-    # Track the Appium suite's real signal in the nightly regression run.
-    continue-on-error: true
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: |
-            app/package-lock.json
-            api/mock-server/package-lock.json
-            tests/e2e-mobile/package-lock.json
-
-      - name: Setup Java (for Android SDK)
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Install app dependencies
-        run: npm ci
-        working-directory: app
-
-      - name: Install mock server dependencies
-        run: npm ci
-        working-directory: api/mock-server
-
-      - name: Install mobile test dependencies
-        run: npm ci
-        working-directory: tests/e2e-mobile
-
-      - name: Build Ionic app
-        run: npm run build
-        working-directory: app
-
-      - name: Add Android platform via Capacitor
-        run: npx cap add android || true
-        working-directory: app
-
-      - name: Sync Capacitor
-        run: npx cap sync android
-        working-directory: app
-
-      - name: Build Android APK
-        run: |
-          cd android
-          chmod +x gradlew
-          ./gradlew assembleDebug
-        working-directory: app
-
-      - name: Start mock server
-        run: npm start &
-        working-directory: api/mock-server
-        env:
-          PORT: ${{ env.MOCK_SERVER_PORT }}
-
-      # Without this the emulator starts without hardware acceleration and the
-      # adb daemon never comes up ("Unable to connect to adb daemon on port
-      # 5037", exit 224). The KVM device exists on the runner but is not
-      # world-accessible until this udev rule is applied.
-      - name: Enable KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
-      - name: Run Appium tests on Android emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 33
-          target: google_apis
-          arch: x86_64
-          # avdmanager --device takes a device id, not a display name. "Pixel 6"
-          # fails with "No device found matching --device Pixel 6"; the id is
-          # lowercase and underscored.
-          profile: pixel_6
-          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-          disable-animations: true
-          script: |
-            adb wait-for-device
-            adb shell settings put global window_animation_scale 0
-            adb shell settings put global transition_animation_scale 0
-            adb shell settings put global animator_duration_scale 0
-            cd tests/e2e-mobile
-            npx wdio run ./wdio.conf.ts
-
-      - name: Upload mobile artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: allure-results-mobile
-          path: tests/reports/
-          retention-days: 14
-          if-no-files-found: ignore
+  # The Appium suite is deliberately NOT part of this pipeline.
+  #
+  # Its screen objects locate elements with the accessibility-id strategy
+  # (`~login-email-input`), but data-testid is a DOM attribute inside the
+  # Capacitor WebView, not an Android accessibility id. Nothing in the suite
+  # switches to the WEBVIEW context, so UiAutomator2 can never resolve those
+  # selectors and every spec waits out its full timeout before failing.
+  #
+  # Running it anyway cost 45 minutes per build and, because a timeout cancels
+  # the job rather than failing it, continue-on-error did not stop that from
+  # taking the whole run's conclusion down with it. It is exercised on demand
+  # via the nightly workflow's manual trigger until the context switching is
+  # implemented — see the mobile section of the README.
 
   generate-report:
     name: Generate Combined Report
-    needs: [api-tests, e2e-web-tests, e2e-mobile-tests]
+    needs: [api-tests, e2e-web-tests]
     if: always()
     runs-on: ubuntu-latest
     permissions:
