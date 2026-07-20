@@ -3,7 +3,14 @@ name: Nightly Regression
 on:
   schedule:
     - cron: '0 2 * * *'  # 2:00 AM UTC daily
-  workflow_dispatch:       # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      run_mobile:
+        description: >
+          Run the Appium suite. Off by default: it cannot pass yet (see the
+          mobile-regression job) and costs an hour before timing out.
+        type: boolean
+        default: false
 
 concurrency:
   group: nightly-regression
@@ -183,18 +190,20 @@ jobs:
     name: Mobile Regression (${{ matrix.device }} / API ${{ matrix.api-level }})
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    # Manual trigger only, not on the nightly schedule.
+    # Opt-in only — never on the schedule, and off by default even when the
+    # workflow is triggered by hand.
     #
     # The suite cannot currently pass: its screen objects use the
     # accessibility-id strategy (`~login-email-input`) while data-testid lives
     # in the DOM inside the Capacitor WebView, and nothing switches to the
     # WEBVIEW context. Every spec therefore waits out its timeout. A job that
     # times out is *cancelled* rather than failed, which drags the whole run's
-    # conclusion down regardless of continue-on-error — so scheduled runs skip
-    # it and keep reporting a trustworthy result.
+    # conclusion down regardless of continue-on-error, so leaving it on would
+    # make every manual run look broken.
     #
-    # Run it deliberately with: gh workflow run "Nightly Regression"
-    if: github.event_name == 'workflow_dispatch'
+    # Run it deliberately with:
+    #   gh workflow run "Nightly Regression" -f run_mobile=true
+    if: inputs.run_mobile
     continue-on-error: true
     strategy:
       fail-fast: false
