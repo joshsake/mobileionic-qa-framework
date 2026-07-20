@@ -80,10 +80,22 @@ npx playwright test --project=api
 # Web E2E tests (mock server + app must be running)
 npx playwright test --project=web
 
+# Same gates CI runs
+npm run lint
+npm run typecheck
+
 # Generate Allure report
 npx allure generate reports/allure-results --clean -o reports/allure-report
 npx allure open reports/allure-report
 ```
+
+The `web` project is the fast local default (mobile-sized Chromium). CI shards
+across per-browser projects: `web-chromium`, `web-firefox`, `web-webkit`,
+`web-mobile-chrome`, `web-mobile-safari`.
+
+Point the suites at another environment with `BASE_URL` and `API_BASE_URL`.
+The mock server must stay on port 3000 unless you also rebuild the app — the
+Ionic build bakes `src/environments/environment.ts` in at compile time.
 
 ### 4. Run Mobile Tests (requires Android emulator)
 
@@ -112,9 +124,9 @@ docker-compose up -d
 
 ## Test Suites Overview
 
-### Web E2E (~30 tests)
+### Web E2E (36 passing, 1 skipped)
 - Login: valid/invalid credentials, field validation, logout
-- Workouts: CRUD, filtering, search
+- Workouts: list, create, edit, search/filter
 - Navigation: tabs, deep links, back button
 - Responsive: mobile/tablet viewports, orientation
 
@@ -124,11 +136,11 @@ docker-compose up -d
 - Gestures: swipe, pinch zoom, long press, drag-to-reorder
 - Device: orientation, back button, backgrounding, notifications
 
-### API (~30 tests)
+### API (40 passing, 1 skipped)
 - Auth: login/register, token handling
-- Workouts: full CRUD lifecycle, filtering, authorization
+- Workouts: full CRUD lifecycle, userId/date filtering, ordering
 - Analytics: summary accuracy, weekly breakdown
-- Contracts: JSON schema validation, response shape enforcement
+- Contracts: ajv schema validation with format checking, passwordHash leak check
 
 ### Performance (3 profiles)
 - Load: ramp to 50 users, p95 < 500ms
@@ -156,6 +168,38 @@ docker-compose up -d
 - [Device Matrix](docs/device-matrix.md) — target devices, OS versions, priority tiers
 - [Defect Taxonomy](docs/defect-taxonomy.md) — severity levels, categories, bug report template
 
+## Current Status & Known Gaps
+
+Stating this plainly so the coverage claims above are not read as more than
+they are.
+
+| Layer | Status |
+|---|---|
+| Lint + type check | Green in CI |
+| API + contract tests | Green in CI |
+| Web E2E (Chromium, Firefox, Mobile Chrome) | Green in CI |
+| Allure report generation | Green in CI |
+| Mobile E2E (Appium/Android) | **Not yet validated against a live emulator** |
+| k6 performance | Runs nightly; verified by desk-check and simulation, not yet by a real k6 run |
+
+**Mobile E2E is advisory, not a merge gate.** The emulator job builds the app,
+adds the Capacitor Android platform and produces a debug APK, but the Appium
+specs have not been proven against a booted device. Driving a Capacitor app
+also requires native/webview context switching, which the screen objects do not
+yet handle. Treat that suite as scaffolding until a run goes green.
+
+**Two known defects are documented rather than papered over:**
+
+1. `GET /api/workouts` requires a bearer token but never scopes results to the
+   caller — it returns every user's records unless an explicit `?userId=` is
+   passed. `WorkoutsController.GetAll` has the same shape, so this is a service
+   defect, not a mock artefact, and it is inconsistent with
+   `/api/analytics/summary`, which does derive the user from the token. Covered
+   by a skipped spec in `tests/api/specs/workouts.spec.ts` so the expected
+   behaviour is recorded and starts enforcing the moment it is fixed.
+2. The workout list has no delete affordance. The spec for it is skipped with a
+   comment rather than deleted, and the page object method is kept ready.
+
 ## Key Framework Design Decisions
 
 - **Page Object Model** for web, **Screen Object Model** for mobile — separates test logic from UI selectors
@@ -164,3 +208,14 @@ docker-compose up -d
 - **Contract testing** with ajv — ensures API responses match expected schemas
 - **Allure reporting** — rich HTML reports with screenshots on failure and video on retry
 - **Matrix CI** — parallel browser/device testing for coverage without serial bottlenecks
+- **The mock mirrors the real API rather than being convenient** — it assigns
+  `id`/`createdAt` server-side and merges on `PUT` because the .NET controller
+  does, and it deliberately reproduces the unscoped list endpoint. A mock that
+  is stricter than the service it stands in for hides defects instead of
+  catching them.
+- **In-memory fixtures** — the mock loads `db.json` into memory and never writes
+  back, so every run starts from the same known-good state. Persisting
+  mutations meant one run's `PUT` corrupted the next run's baseline.
+- **Tests own their data** — specs create the records they assert on and clean
+  up afterwards. Asserting over shared mutable state races other specs under
+  `fullyParallel` and produces failures that look like product bugs.
