@@ -91,29 +91,16 @@ export class LoginPage extends BasePage {
   }
 
   /** Return true if the Login button is currently disabled. */
+  //
+  // Returns the button's state at the instant it is called — it does not wait.
+  // For a state the app reaches after a delay (e.g. Ionic on WebKit lags in
+  // reflecting the disabled attribute), drive it from the spec with
+  // expect.poll(() => isSubmitDisabled()) so the retry and the assertion share
+  // one mechanism.
   async isSubmitDisabled(): Promise<boolean> {
     const btn = this.page.locator(SELECTORS.LOGIN_SUBMIT_BTN);
     // Ionic buttons use the "disabled" attribute
     const disabled = await btn.getAttribute('disabled');
     return disabled !== null;
-  }
-
-  /**
-   * Wait until the submit button reaches the expected enabled state.
-   *
-   * isSubmitDisabled() is a single immediate read with no auto-waiting, so
-   * calling it straight after filling a field races Angular's change detection:
-   * the attribute is still present for a tick after the model updates. Tests
-   * that expect a *transition* need to wait for it rather than sample once.
-   */
-  async waitForSubmitEnabled(enabled = true, timeout = 10_000): Promise<void> {
-    await this.page.waitForFunction(
-      ({ selector, want }) => {
-        const el = document.querySelector(selector);
-        return !!el && el.hasAttribute('disabled') !== want;
-      },
-      { selector: SELECTORS.LOGIN_SUBMIT_BTN, want: enabled },
-      { timeout },
-    );
   }
 }

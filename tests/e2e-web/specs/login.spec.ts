@@ -127,9 +127,16 @@ test.describe('Empty Field Validation', () => {
     await loginPage.fillEmail(VALID_USER.email);
     await loginPage.fillPassword(VALID_USER.password);
 
-    // THEN the login button should become enabled
-    await loginPage.waitForSubmitEnabled();
-    expect(await loginPage.isSubmitDisabled()).toBe(false);
+    // THEN the login button should become enabled.
+    //
+    // WebKit lags ~500ms between the inputs holding values and Ionic reflecting
+    // the button's disabled state (measured: attribute is still present at 0ms,
+    // cleared by 500ms); Chromium reflects it almost immediately. Poll the same
+    // check the assertion makes so the wait and the assertion can never see
+    // different states — a fixed wait would just move the race.
+    await expect.poll(() => loginPage.isSubmitDisabled(), {
+      timeout: 10_000,
+    }).toBe(false);
   });
 });
 
