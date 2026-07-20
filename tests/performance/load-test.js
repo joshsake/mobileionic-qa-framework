@@ -132,7 +132,7 @@ function authenticate() {
       try {
         const body = JSON.parse(r.body);
         return body.token !== undefined;
-      } catch {
+      } catch (_err) {
         return false;
       }
     },
@@ -147,7 +147,7 @@ function authenticate() {
 
   try {
     return JSON.parse(res.body).token;
-  } catch {
+  } catch (_err) {
     return null;
   }
 }
@@ -175,7 +175,7 @@ function getWorkouts(token) {
       try {
         const body = JSON.parse(r.body);
         return Array.isArray(body);
-      } catch {
+      } catch (_err) {
         return false;
       }
     },
@@ -219,7 +219,7 @@ function postWorkout(token) {
       try {
         const body = JSON.parse(r.body);
         return body.id !== undefined;
-      } catch {
+      } catch (_err) {
         return false;
       }
     },

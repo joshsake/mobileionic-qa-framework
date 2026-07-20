@@ -161,7 +161,7 @@ function authenticate() {
     'auth has token': (r) => {
       try {
         return JSON.parse(r.body).token !== undefined;
-      } catch {
+      } catch (_err) {
         return false;
       }
     },
@@ -177,7 +177,7 @@ function authenticate() {
 
   try {
     return JSON.parse(res.body).token;
-  } catch {
+  } catch (_err) {
     return null;
   }
 }
@@ -201,7 +201,7 @@ function getWorkouts(token) {
     'get workouts body is array': (r) => {
       try {
         return Array.isArray(JSON.parse(r.body));
-      } catch {
+      } catch (_err) {
         return false;
       }
     },

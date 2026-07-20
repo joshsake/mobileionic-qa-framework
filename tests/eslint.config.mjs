@@ -72,10 +72,20 @@ export default tseslint.config(
       },
     },
     rules: {
-      // Same underscore convention as the TypeScript sources above.
+      /*
+       * Same underscore convention as the TypeScript sources above.
+       *
+       * caughtErrors matters here: k6 compiles these scripts through an older
+       * Babel that rejects optional catch binding (`} catch {`), so every catch
+       * has to name a parameter even when nothing uses it.
+       */
       '@typescript-eslint/no-unused-vars': [
         'error',
-        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
       ],
     },
   },

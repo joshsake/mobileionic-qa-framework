@@ -144,7 +144,7 @@ function authenticate() {
 
   try {
     return JSON.parse(res.body).token;
-  } catch {
+  } catch (_err) {
     return null;
   }
 }
