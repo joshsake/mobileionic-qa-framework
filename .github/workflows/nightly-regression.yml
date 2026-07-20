@@ -255,6 +255,15 @@ jobs:
         env:
           PORT: ${{ env.MOCK_SERVER_PORT }}
 
+      # Without this the emulator starts unaccelerated and the adb daemon never
+      # comes up ("Unable to connect to adb daemon on port 5037", exit 224).
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
       - name: Run Appium suite
         uses: reactivecircus/android-emulator-runner@v2
         with:
