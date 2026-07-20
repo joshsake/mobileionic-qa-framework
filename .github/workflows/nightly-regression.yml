@@ -180,7 +180,7 @@ jobs:
           if-no-files-found: ignore
 
   mobile-regression:
-    name: Mobile Regression (${{ matrix.device }})
+    name: Mobile Regression (${{ matrix.device }} / API ${{ matrix.api-level }})
     runs-on: ubuntu-latest
     timeout-minutes: 60
     # Emulator runs on hosted runners are inherently flaky: the AVD has to boot,
@@ -191,10 +191,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # These are avdmanager device ids, not display names. "Pixel 6" fails
+        # with "No device found matching --device Pixel 6".
         include:
-          - device: Pixel 6
+          - device: pixel_6
             api-level: 33
-          - device: Pixel 7
+          - device: pixel_6
             api-level: 34
     steps:
       - name: Checkout repository
@@ -274,7 +276,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: allure-results-mobile-${{ matrix.device }}
+          name: allure-results-mobile-${{ matrix.device }}-api${{ matrix.api-level }}
           path: tests/reports/
           retention-days: 30
           if-no-files-found: ignore

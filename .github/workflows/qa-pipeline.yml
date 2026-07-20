@@ -294,7 +294,10 @@ jobs:
           api-level: 33
           target: google_apis
           arch: x86_64
-          profile: Pixel 6
+          # avdmanager --device takes a device id, not a display name. "Pixel 6"
+          # fails with "No device found matching --device Pixel 6"; the id is
+          # lowercase and underscored.
+          profile: pixel_6
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           disable-animations: true
           script: |
