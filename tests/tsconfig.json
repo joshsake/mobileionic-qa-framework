@@ -26,6 +26,9 @@
   "exclude": [
     "node_modules",
     "dist",
-    "reports"
+    "reports",
+    "test-results",
+    "playwright-report",
+    "e2e-mobile"
   ]
 }

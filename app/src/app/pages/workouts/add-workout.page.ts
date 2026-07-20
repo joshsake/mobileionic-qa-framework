@@ -126,8 +126,8 @@ export class AddWorkoutPage {
     this.errorMessage = '';
     this.api
       .addWorkout({
-        exercise: this.exercise,
-        duration: this.duration,
+        exerciseType: this.exercise,
+        durationMinutes: this.duration,
         date: this.date,
         notes: this.notes,
       })

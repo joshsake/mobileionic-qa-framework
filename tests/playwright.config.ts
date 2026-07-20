@@ -15,6 +15,22 @@ import * as dotenv from 'dotenv';
 
 dotenv.config();
 
+/*
+ * BASE_URL is what the CI workflows export; WEB_BASE_URL is the older local
+ * name. Accept both so a developer's .env keeps working in the pipeline.
+ */
+const WEB_BASE_URL =
+  process.env.BASE_URL || process.env.WEB_BASE_URL || 'http://localhost:8100';
+
+/*
+ * Endpoint constants in shared/constants.ts are absolute paths beginning with
+ * `/api`. If API_BASE_URL also ends in `/api`, every request would resolve to
+ * `/api/api/...`, so strip a trailing `/api` (and any trailing slash) here.
+ */
+const API_BASE_URL = (process.env.API_BASE_URL || 'http://localhost:3000')
+  .replace(/\/api\/?$/, '')
+  .replace(/\/$/, '');
+
 export default defineConfig({
   /* Base test directory */
   testDir: '.',
@@ -66,31 +82,39 @@ export default defineConfig({
 
   projects: [
     /* ── Web E2E Tests ────────────────────────────────────────────────── */
-    {
-      name: 'web',
+    /*
+     * One project per browser so CI can shard the matrix with
+     * `--project=web-<browser>`. The plain `web` project is the local
+     * default — it runs the mobile-sized Chromium profile, which is the
+     * fastest signal while developing.
+     */
+    ...(
+      [
+        ['web', devices['Pixel 5']],
+        ['web-chromium', devices['Desktop Chrome']],
+        ['web-firefox', devices['Desktop Firefox']],
+        ['web-webkit', devices['Desktop Safari']],
+        ['web-mobile-chrome', devices['Pixel 5']],
+        ['web-mobile-safari', devices['iPhone 13']],
+      ] as const
+    ).map(([name, device]) => ({
+      name,
       testDir: './e2e-web/specs',
       use: {
-        /* Ionic dev server */
-        baseURL: process.env.WEB_BASE_URL || 'http://localhost:8100',
-
-        /* Mobile viewport to match Ionic's primary target */
-        ...devices['Pixel 5'],
-
-        /* Enable touch events for mobile gesture testing */
-        hasTouch: true,
-
-        /* Emulate mobile user agent */
-        userAgent: devices['Pixel 5'].userAgent,
+        /* Ionic app under test. CI serves the production build on 4200. */
+        baseURL: WEB_BASE_URL,
+        ...device,
       },
-    },
+    })),
 
     /* ── API Tests ────────────────────────────────────────────────────── */
     {
       name: 'api',
       testDir: './api/specs',
       use: {
-        /* Mock API server */
-        baseURL: process.env.API_BASE_URL || 'http://localhost:3000',
+        /* Mock API server. Paths in shared/constants.ts already carry the
+         * `/api` prefix, so this must be an origin with no path segment. */
+        baseURL: API_BASE_URL,
 
         /* API tests don't need a browser — use minimal config */
         screenshot: 'off',

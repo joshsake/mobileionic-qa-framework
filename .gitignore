@@ -14,8 +14,10 @@ api/dotnet-api/obj/
 *.suo
 
 # Test outputs
-tests/reports/allure-results/
-tests/reports/allure-report/
+# allure-playwright writes to tests/allure-results/ as well as the configured
+# reports/ folder, so both are ignored rather than just the configured one.
+tests/reports/
+tests/allure-results/
 test-results/
 playwright-report/
 

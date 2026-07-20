@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "start:watch": "npx nodemon server.js",
-    "reset-db": "node -e \"const fs=require('fs');fs.copyFileSync('db.seed.json','db.json');console.log('DB reset to seed data.');\""
+    "reset-db": "curl -sf -X POST http://localhost:3000/api/test/reset"
   },
   "dependencies": {
     "json-server": "^0.17.4",

@@ -12,9 +12,9 @@
  *     to the error element structure.
  */
 
-import { type Page, type Locator } from '@playwright/test';
+import { type Page } from '@playwright/test';
 import { BasePage } from './base.page';
-import { SELECTORS, URLS } from '../../shared/constants';
+import { SELECTORS, TIMEOUTS, URLS } from '../../shared/constants';
 
 export class AddWorkoutPage extends BasePage {
   constructor(page: Page) {
@@ -32,27 +32,45 @@ export class AddWorkoutPage extends BasePage {
   // ─── Form Field Actions ───────────────────────────────────────────────
 
   /**
-   * Select an exercise type from the dropdown/picker.
-   * Ionic may render this as an ion-select with an action sheet or popover.
+   * Select an exercise type from the ion-select picker.
+   *
+   * The ion-select-option elements sit in the DOM but are never visible —
+   * Ionic only copies their labels into an overlay once the select is tapped,
+   * so clicking an option element directly can never succeed. This drives the
+   * overlay the way a user does: open the select, pick the visible label,
+   * confirm, then wait for the overlay to tear down (its backdrop swallows
+   * clicks aimed at the next field until it is gone).
    */
   async selectExercise(exerciseType: string): Promise<void> {
-    const select = this.page.locator(SELECTORS.EXERCISE_TYPE_SELECT);
-    await select.click();
+    await this.page.locator(SELECTORS.EXERCISE_TYPE_SELECT).click();
 
-    // Ionic renders select options in an overlay — wait for it
-    const overlay = this.page.locator('ion-alert, ion-action-sheet, ion-popover');
-    await overlay.waitFor({ state: 'visible', timeout: 5_000 });
+    const overlay = this.page
+      .locator('ion-alert, ion-action-sheet, ion-popover')
+      .first();
+    await overlay.waitFor({ state: 'visible', timeout: TIMEOUTS.ELEMENT });
 
-    // Click the matching option
-    const option = this.page.locator(`ion-radio, ion-select-option, button`)
-      .filter({ hasText: exerciseType });
+    /*
+     * Which role the option carries depends on the select's interface: the
+     * default alert renders radios, a popover renders options and an action
+     * sheet renders buttons. Matching the accessible name exactly stops a
+     * short type ("Running") from also selecting a longer one that contains it.
+     */
+    const option = overlay
+      .getByRole('radio', { name: exerciseType, exact: true })
+      .or(overlay.getByRole('option', { name: exerciseType, exact: true }))
+      .or(overlay.getByRole('button', { name: exerciseType, exact: true }));
     await option.first().click();
 
-    // Confirm selection if there's an OK button
-    const okButton = this.page.locator('ion-alert button').filter({ hasText: /ok|confirm/i });
-    if (await okButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
-      await okButton.click();
+    // Only the alert interface asks for confirmation; the others apply the
+    // choice on click and have no OK button to press.
+    const confirmButton = overlay.getByRole('button', {
+      name: /^(ok|confirm|done)$/i,
+    });
+    if ((await confirmButton.count()) > 0) {
+      await confirmButton.first().click();
     }
+
+    await overlay.waitFor({ state: 'hidden', timeout: TIMEOUTS.ELEMENT });
   }
 
   /** Set the workout duration in minutes. */
@@ -114,7 +132,15 @@ export class AddWorkoutPage extends BasePage {
     return messages;
   }
 
-  /** Return true if the submit button is currently disabled. */
+  /**
+   * Return true if the submit button is currently disabled.
+   *
+   * Read the attribute rather than using Playwright's isDisabled()/
+   * toBeDisabled(): those only recognise natively disableable elements, and
+   * ion-button is a custom element, so they report a disabled Save button as
+   * enabled. Ionic does reflect the state onto the attribute, so that is the
+   * signal to trust here.
+   */
   async isSubmitDisabled(): Promise<boolean> {
     const btn = this.page.locator(SELECTORS.WORKOUT_SUBMIT_BTN);
     const disabled = await btn.getAttribute('disabled');

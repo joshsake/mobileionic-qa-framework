@@ -5,7 +5,7 @@ import {
   IonHeader, IonToolbar, IonTitle, IonContent,
   IonList, IonItem, IonLabel, IonFab, IonFabButton,
   IonIcon, IonBackButton, IonButtons, IonBadge,
-  IonNote,
+  IonNote, IonSearchbar,
 } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import { addOutline } from 'ionicons/icons';
@@ -19,7 +19,7 @@ import { ApiService, Workout } from '../../services/api.service';
     IonHeader, IonToolbar, IonTitle, IonContent,
     IonList, IonItem, IonLabel, IonFab, IonFabButton,
     IonIcon, IonBackButton, IonButtons, IonBadge,
-    IonNote,
+    IonNote, IonSearchbar,
   ],
   template: `
     <ion-header>
@@ -31,21 +31,28 @@ import { ApiService, Workout } from '../../services/api.service';
       </ion-toolbar>
     </ion-header>
     <ion-content class="ion-padding">
+      <ion-searchbar
+        data-testid="workout-search"
+        placeholder="Search workouts"
+        [value]="searchTerm"
+        (ionInput)="onSearch($any($event).detail.value)"
+      ></ion-searchbar>
+
       <ion-list data-testid="workout-list">
         <ion-item
-          *ngFor="let workout of workouts; let i = index"
+          *ngFor="let workout of filteredWorkouts; let i = index"
           [attr.data-testid]="'workout-list-item-' + i"
           button
         >
           <ion-label>
-            <h2 [attr.data-testid]="'workout-name-' + i">{{ workout.exercise }}</h2>
+            <h2 [attr.data-testid]="'workout-name-' + i">{{ workout.exerciseType }}</h2>
             <p [attr.data-testid]="'workout-date-' + i">{{ workout.date | date:'mediumDate' }}</p>
           </ion-label>
           <ion-note slot="end" [attr.data-testid]="'workout-duration-' + i">
-            {{ workout.duration }} min
+            {{ workout.durationMinutes }} min
           </ion-note>
         </ion-item>
-        <ion-item *ngIf="workouts.length === 0" data-testid="workout-empty-state">
+        <ion-item *ngIf="filteredWorkouts.length === 0" data-testid="workout-empty-state">
           <ion-label>No workouts yet. Tap + to add one!</ion-label>
         </ion-item>
       </ion-list>
@@ -60,6 +67,21 @@ import { ApiService, Workout } from '../../services/api.service';
 })
 export class WorkoutsPage implements OnInit {
   workouts: Workout[] = [];
+
+  /** Current search text; empty string means "show everything". */
+  searchTerm = '';
+
+  /** Workouts matching the current search term, by exercise type or notes. */
+  get filteredWorkouts(): Workout[] {
+    const term = this.searchTerm.trim().toLowerCase();
+    if (!term) return this.workouts;
+
+    return this.workouts.filter(
+      (w) =>
+        w.exerciseType.toLowerCase().includes(term) ||
+        (w.notes ?? '').toLowerCase().includes(term),
+    );
+  }
 
   constructor(
     private api: ApiService,
@@ -77,6 +99,10 @@ export class WorkoutsPage implements OnInit {
       next: (data) => (this.workouts = data),
       error: () => (this.workouts = []),
     });
+  }
+
+  onSearch(term: string | null | undefined) {
+    this.searchTerm = term ?? '';
   }
 
   addWorkout() {

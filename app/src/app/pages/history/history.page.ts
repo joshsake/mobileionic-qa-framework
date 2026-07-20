@@ -63,12 +63,12 @@ import { ApiService, Workout } from '../../services/api.service';
           [attr.data-testid]="'history-item-' + i"
         >
           <ion-label>
-            <h2 [attr.data-testid]="'history-exercise-' + i">{{ workout.exercise }}</h2>
+            <h2 [attr.data-testid]="'history-exercise-' + i">{{ workout.exerciseType }}</h2>
             <p [attr.data-testid]="'history-date-' + i">{{ workout.date | date:'mediumDate' }}</p>
             <p *ngIf="workout.notes" [attr.data-testid]="'history-notes-' + i">{{ workout.notes }}</p>
           </ion-label>
           <ion-badge slot="end" [attr.data-testid]="'history-duration-' + i">
-            {{ workout.duration }} min
+            {{ workout.durationMinutes }} min
           </ion-badge>
         </ion-item>
         <ion-item *ngIf="filteredWorkouts.length === 0" data-testid="history-empty-state">

@@ -131,10 +131,21 @@ export class ApiClient {
 
   // ─── Workouts ──────────────────────────────────────────────────────────
 
-  /** GET /api/workouts — list workouts for the authenticated user. */
-  async getWorkouts(): Promise<APIResponse> {
+  /**
+   * GET /api/workouts — list workouts.
+   *
+   * Mirrors WorkoutsController.GetAll, which accepts optional userId/from/to
+   * filters. Note the endpoint returns every user's records when no userId is
+   * given; see the skipped authorization spec in api/specs/workouts.spec.ts.
+   */
+  async getWorkouts(filters?: {
+    userId?: number;
+    from?: string;
+    to?: string;
+  }): Promise<APIResponse> {
     return this.request.get(API.WORKOUTS, {
       headers: this.authHeaders,
+      ...(filters ? { params: filters } : {}),
     });
   }
 

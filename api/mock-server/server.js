@@ -14,10 +14,22 @@
 const jsonServer = require('json-server');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
+const fs = require('fs');
 const path = require('path');
 
 const server = jsonServer.create();
-const router = jsonServer.router(path.join(__dirname, 'db.json'));
+
+/**
+ * Load db.json into memory rather than pointing json-server at the file.
+ *
+ * json-server writes every mutation straight back to disk. That means a POST or
+ * PUT from one test run leaks into the next, and the seeded fixtures drift over
+ * time. Passing a plain object makes the router operate on an in-memory copy, so
+ * every server start begins from the same known-good state and the committed
+ * db.json is never modified.
+ */
+const seedData = JSON.parse(fs.readFileSync(path.join(__dirname, 'db.json'), 'utf8'));
+const router = jsonServer.router(JSON.parse(JSON.stringify(seedData)));
 const middlewares = jsonServer.defaults();
 
 // ─── Configuration ───────────────────────────────────────────────────────────
@@ -39,13 +51,38 @@ const USER_PASSWORDS = {
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 
+/**
+ * Allow any localhost origin. CI serves the built app on whichever port is free,
+ * so pinning an explicit list here caused cross-origin failures in the pipeline.
+ */
 server.use(cors({
-  origin: ['http://localhost:8100', 'http://localhost:4200', 'http://localhost:3000'],
+  origin: /^http:\/\/localhost:\d+$/,
   credentials: true,
 }));
 
 server.use(jsonServer.bodyParser);
 server.use(middlewares);
+
+// ─── Health check ────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/health
+ * Unauthenticated readiness probe. CI polls this before starting a test run so
+ * the suite never races against a server that is still booting.
+ */
+server.get('/api/health', (req, res) => {
+  return res.status(200).json({ status: 'ok', uptime: process.uptime() });
+});
+
+/**
+ * POST /api/test/reset
+ * Restores the in-memory database to its seeded state. Test suites that mutate
+ * shared records call this in a beforeAll hook to guarantee a clean baseline.
+ */
+server.post('/api/test/reset', (req, res) => {
+  router.db.setState(JSON.parse(JSON.stringify(seedData))).write();
+  return res.status(200).json({ status: 'reset' });
+});
 
 // ─── Helper: generate a JWT for a given user record ──────────────────────────
 
@@ -247,6 +284,106 @@ server.put('/api/profile', (req, res) => {
   const user = db.get('users').find({ id: req.userId }).assign(updates).write();
   const { passwordHash, ...profile } = user;
   return res.status(200).json(profile);
+});
+
+// ─── Workout listing ────────────────────────────────────────────────────────
+
+/**
+ * GET /api/workouts
+ *
+ * Mirrors WorkoutsController.GetAll: optional userId/from/to filters, newest
+ * first. json-server's rewriter strips the query string before the router sees
+ * it, so any filtered request used to 404 and the "filtering" contract test
+ * quietly asserted nothing.
+ *
+ * Note this deliberately does NOT scope results to the bearer token, because
+ * the .NET controller does not either — see the skipped authorization spec in
+ * tests/api/specs/workouts.spec.ts. Diverging here would hide a real defect
+ * behind a mock that is stricter than the service it stands in for.
+ */
+server.get('/api/workouts', (req, res) => {
+  const { userId, from, to } = req.query;
+  let workouts = router.db.get('workouts').value();
+
+  if (userId !== undefined) {
+    workouts = workouts.filter((w) => w.userId === Number(userId));
+  }
+  if (from !== undefined) {
+    workouts = workouts.filter((w) => new Date(w.date) >= new Date(from));
+  }
+  if (to !== undefined) {
+    workouts = workouts.filter((w) => new Date(w.date) <= new Date(to));
+  }
+
+  const ordered = [...workouts].sort((a, b) => new Date(b.date) - new Date(a.date));
+  return res.status(200).json(ordered);
+});
+
+// ─── Workout creation ───────────────────────────────────────────────────────
+
+/**
+ * POST /api/workouts
+ *
+ * json-server persists whatever the client posts and only adds an id, so a
+ * created record was missing the server-assigned fields the schema requires.
+ * The .NET controller stamps Id and CreatedAt itself (Workout.Id = 0;
+ * Workout.CreatedAt = DateTime.UtcNow), so the mock does the same and falls back
+ * to the authenticated user for userId.
+ */
+server.post('/api/workouts', (req, res) => {
+  const { exerciseType, durationMinutes } = req.body;
+
+  if (!exerciseType || durationMinutes === undefined) {
+    return res.status(400).json({ message: 'exerciseType and durationMinutes are required.' });
+  }
+
+  const db = router.db;
+  const workouts = db.get('workouts');
+  const existingIds = workouts.value().map((w) => w.id);
+  const nextId = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 1;
+
+  const created = {
+    id: nextId,
+    userId: req.body.userId ?? req.userId,
+    exerciseType,
+    durationMinutes,
+    notes: req.body.notes ?? null,
+    date: req.body.date ?? new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+  };
+
+  workouts.push(created).write();
+  return res.status(201).json(created);
+});
+
+// ─── Workout update ─────────────────────────────────────────────────────────
+
+/**
+ * PUT /api/workouts/:id
+ *
+ * json-server treats PUT as a full document replacement, so a partial payload
+ * silently drops every field the caller omitted. The .NET controller merges the
+ * incoming fields onto the existing record instead. This handler reproduces the
+ * .NET behaviour so tests written against the mock stay valid against the real
+ * API.
+ */
+server.put('/api/workouts/:id', (req, res) => {
+  const db = router.db;
+  const id = Number(req.params.id);
+  const existing = db.get('workouts').find({ id }).value();
+
+  if (!existing) {
+    return res.status(404).json({ message: 'Workout not found.' });
+  }
+
+  const mutableFields = ['exerciseType', 'durationMinutes', 'notes', 'date'];
+  const updates = {};
+  mutableFields.forEach((field) => {
+    if (req.body[field] !== undefined) updates[field] = req.body[field];
+  });
+
+  const updated = db.get('workouts').find({ id }).assign(updates).write();
+  return res.status(200).json(updated);
 });
 
 // ─── Workout CRUD (via json-server router) ──────────────────────────────────

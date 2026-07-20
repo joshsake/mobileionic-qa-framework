@@ -19,7 +19,7 @@ import { LoginPage } from '../pages/login.page';
 import { WorkoutsPage } from '../pages/workouts.page';
 import { AddWorkoutPage } from '../pages/add-workout.page';
 import { VALID_USER, WORKOUT_TEMPLATES } from '../fixtures/test-data';
-import { URLS } from '../../shared/constants';
+import { TIMEOUTS, URLS } from '../../shared/constants';
 
 let loginPage: LoginPage;
 let workoutsPage: WorkoutsPage;
@@ -85,24 +85,40 @@ test.describe('Add Workout', () => {
       notes: WORKOUT_TEMPLATES.RUNNING.notes,
     });
 
-    // THEN they should be redirected back to the workout list
-    // (or a success indicator should appear)
-    await page.waitForTimeout(2_000);
+    // THEN they should be redirected back to the workout list.
+    // The app only routes away once the POST resolves — a failed save keeps
+    // the user on the form and renders an error — so landing on /workouts is
+    // the observable proof the workout was created.
+    await page.waitForURL(`**${URLS.WORKOUTS}`, { timeout: TIMEOUTS.NAVIGATION });
+    expect(workoutsPage.getCurrentPath()).toBe(URLS.WORKOUTS);
   });
 
-  test('should show validation errors when required fields are empty', async () => {
+  /*
+   * Renamed from "should show validation errors when required fields are
+   * empty": the app has no inline field-level validation to assert on.
+   * add-workout.page.ts guards the form with
+   * [disabled]="!exercise || !duration || !date", so an empty form can never
+   * be submitted and no error message is ever rendered. The old test clicked
+   * Save and looked for errors, which could only ever time out on the
+   * disabled button. This asserts the guard the app actually implements.
+   */
+  test('should keep the submit button disabled while required fields are empty', async () => {
     // GIVEN the user is on the add workout form
     await addWorkoutPage.navigate();
 
-    // WHEN they submit without filling any fields
-    await addWorkoutPage.submit();
+    // THEN submission is blocked, and nothing is reported to the user yet
+    expect(await addWorkoutPage.isSubmitDisabled()).toBe(true);
+    expect(await addWorkoutPage.getValidationErrors()).toEqual([]);
 
-    // THEN validation errors should be displayed
-    // (Implementation depends on the app — may show inline errors or disable submit)
-    const isDisabled = await addWorkoutPage.isSubmitDisabled();
-    // Either the button was disabled or validation errors appeared
-    const errors = await addWorkoutPage.getValidationErrors();
-    expect(isDisabled || errors.length > 0).toBeTruthy();
+    // WHEN the required fields are supplied
+    // (date is pre-filled with today, so exercise and duration are what is missing)
+    await addWorkoutPage.selectExercise(WORKOUT_TEMPLATES.RUNNING.exerciseType);
+    await addWorkoutPage.setDuration(WORKOUT_TEMPLATES.RUNNING.durationMinutes);
+
+    // THEN the guard releases and the workout can be saved.
+    // Polled because ngModel updates the binding on the next change-detection
+    // tick, not synchronously with the keystroke.
+    await expect.poll(() => addWorkoutPage.isSubmitDisabled()).toBe(false);
   });
 });
 
@@ -128,7 +144,15 @@ test.describe('Edit Workout', () => {
 // ─── Feature: Delete Workout ─────────────────────────────────────────────────
 
 test.describe('Delete Workout', () => {
-  test('should remove a workout from the list when deleted', async () => {
+  /*
+   * Skipped: the app ships no way to delete a workout. workouts.page.ts
+   * renders each row read-only — no delete button, no ion-item-sliding swipe
+   * action, no context menu — so there is nothing for this scenario to drive,
+   * and the mock API's delete route is unreachable from the UI. Kept as a
+   * placeholder (along with WorkoutsPage.deleteWorkout) so the coverage is
+   * ready the day the affordance ships, rather than deleted and forgotten.
+   */
+  test.skip('should remove a workout from the list when deleted', async () => {
     // GIVEN the workout list is displayed
     await workoutsPage.navigate();
     const initialCount = await workoutsPage.getWorkoutCount();
@@ -136,11 +160,10 @@ test.describe('Delete Workout', () => {
     // WHEN the user deletes the first workout
     if (initialCount > 0) {
       await workoutsPage.deleteWorkout(0);
-      await workoutsPage.page.waitForTimeout(1_000);
 
-      // THEN the workout count should decrease by one
-      const newCount = await workoutsPage.getWorkoutCount();
-      expect(newCount).toBeLessThanOrEqual(initialCount);
+      // THEN the workout count should decrease by exactly one
+      await workoutsPage.waitForWorkoutCount(initialCount - 1);
+      expect(await workoutsPage.getWorkoutCount()).toBe(initialCount - 1);
     }
   });
 });
@@ -148,31 +171,48 @@ test.describe('Delete Workout', () => {
 // ─── Feature: Search/Filter Workouts ─────────────────────────────────────────
 
 test.describe('Filter Workouts', () => {
+  /*
+   * Searching lower-case on purpose: the page lower-cases both the term and
+   * the workout before comparing, so this also covers the case-insensitive
+   * branch of the filter rather than only the exact-case one.
+   */
+  const SEARCH_TERM = 'yoga';
+
   test('should filter workouts when a search term is entered', async () => {
     // GIVEN the workout list is displayed
     await workoutsPage.navigate();
+    const unfilteredCount = await workoutsPage.getWorkoutCount();
 
-    // WHEN the user searches for "Running"
-    await workoutsPage.searchWorkout('Running');
+    // WHEN the user searches for an exercise type
+    await workoutsPage.searchWorkout(SEARCH_TERM);
 
-    // THEN only running workouts should be visible (or fewer results)
-    const count = await workoutsPage.getWorkoutCount();
-    // We can't assert exact count without knowing the filter implementation,
-    // but the list should have changed or at least not errored
-    expect(count).toBeGreaterThanOrEqual(0);
+    // THEN the list narrows to matching workouts only.
+    // Asserting on the rendered rows, not just the count: a filter returning
+    // the wrong workouts would still produce a believable count.
+    const visible = await workoutsPage.getWorkoutTexts();
+    expect(visible.length).toBeGreaterThan(0);
+    expect(visible.length).toBeLessThan(unfilteredCount);
+    const nonMatching = visible.filter(
+      (text) => !text.toLowerCase().includes(SEARCH_TERM),
+    );
+    expect(nonMatching).toEqual([]);
   });
 
   test('should show all workouts when the search is cleared', async () => {
     // GIVEN the user has an active search filter
     await workoutsPage.navigate();
-    await workoutsPage.searchWorkout('Running');
+    const unfilteredCount = await workoutsPage.getWorkoutCount();
+
+    await workoutsPage.searchWorkout(SEARCH_TERM);
     const filteredCount = await workoutsPage.getWorkoutCount();
+    expect(filteredCount).toBeLessThan(unfilteredCount);
 
     // WHEN they clear the search
     await workoutsPage.searchWorkout('');
 
-    // THEN all workouts should be visible again
-    const fullCount = await workoutsPage.getWorkoutCount();
-    expect(fullCount).toBeGreaterThanOrEqual(filteredCount);
+    // THEN every workout is listed again. Exact equality is safe because the
+    // page filters the list it already fetched — it does not re-query the API,
+    // so nothing can change the total mid-test.
+    expect(await workoutsPage.getWorkoutCount()).toBe(unfilteredCount);
   });
 });

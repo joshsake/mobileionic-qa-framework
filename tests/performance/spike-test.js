@@ -1,4 +1,5 @@
 import http from 'k6/http';
+import exec from 'k6/execution';
 import { check, group, sleep } from 'k6';
 import { Rate, Trend, Counter } from 'k6/metrics';
 
@@ -18,6 +19,15 @@ import { Rate, Trend, Counter } from 'k6/metrics';
  */
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:5000/api';
+
+const JSON_HEADERS = { 'Content-Type': 'application/json' };
+
+/**
+ * Exercise types the API accepts. Anything outside this list is rejected with a
+ * 400, which would show up as a spike-induced failure when it is really a
+ * malformed request from the test itself.
+ */
+const EXERCISE_TYPES = ['Running', 'Cycling', 'Swimming', 'Yoga', 'Weight Training'];
 
 // Custom metrics
 const errorRate = new Rate('errors');
@@ -47,38 +57,108 @@ export const options = {
 };
 
 /**
- * Determine if we are currently in a spike phase based on elapsed time.
+ * Determine if we are currently in a spike phase.
+ *
+ * The spike stages run at 100 VUs against a baseline of 5, so the number of VUs
+ * k6 currently has active separates the phases cleanly. Two earlier attempts got
+ * this wrong: a wall-clock elapsed time could not be compared against the stage
+ * schedule because k6 gives each VU its own clock, and keying off __VU labelled
+ * VUs 1-20 as baseline traffic even while they were executing inside a spike.
  */
 function isSpikePeriod() {
-  // Spike periods: 30-100s (first spike), 210-280s (second spike)
-  // This is approximate based on the stage durations
-  const elapsed = new Date().getTime() / 1000;
-  return __VU > 20; // Simple heuristic: more than 20 VUs means we're in a spike
+  return exec.instance.vusActive > 20;
 }
 
-function login() {
-  const payload = JSON.stringify({
-    email: `spiketest_user_${__VU}@example.com`,
-    password: 'SpikeTest1234!',
-  });
-
-  const params = {
-    headers: { 'Content-Type': 'application/json' },
-    tags: { name: 'POST /auth/login' },
-    timeout: '15s',
-  };
-
-  const res = http.post(`${BASE_URL}/auth/login`, payload, params);
-
+/**
+ * Record a response against whichever phase is currently running.
+ */
+function recordPhaseTiming(res) {
   if (isSpikePeriod()) {
     spikeResponseTime.add(res.timings.duration);
   } else {
     recoveryResponseTime.add(res.timings.duration);
   }
+}
+
+/**
+ * Whether this VU has already been through the login/register bootstrap.
+ *
+ * k6 gives every VU its own JS runtime, so module-level state is per-VU and
+ * survives across that VU's iterations — exactly the scope needed to remember
+ * that the account no longer has to be provisioned.
+ */
+let provisioned = false;
+
+/**
+ * Credentials for this VU's own account.
+ *
+ * Built on demand instead of as a module constant because __VU is 0 while the
+ * init context runs; a constant would hand every VU the same `_0` account.
+ */
+function credentials() {
+  return {
+    email: `spiketest_user_${__VU}@example.com`,
+    password: 'SpikeTest1234!',
+    displayName: `Spike Test VU ${__VU}`,
+  };
+}
+
+/**
+ * Authenticate, creating this VU's account the first time it is needed.
+ *
+ * The API only seeds three shared users, so a per-VU account has to be
+ * self-provisioned: the first login is expected to 401 and is answered with a
+ * register call. That handshake is setup rather than a fault, so it is kept out
+ * of the checks, errorRate and http_req_failed. It matters most here — a spike
+ * brings 95 brand new VUs online at once, and counting each one's first login
+ * as a failure would blame the spike for the test's own provisioning.
+ */
+function authenticate() {
+  const creds = credentials();
+  const loginBody = JSON.stringify({ email: creds.email, password: creds.password });
+
+  const params = {
+    headers: JSON_HEADERS,
+    tags: { name: 'POST /auth/login' },
+    timeout: '15s',
+  };
+
+  // Only the bootstrap attempt is allowed to treat 401 as an expected status.
+  // Every later login uses the default callback, so a genuine 401 once the
+  // account exists still counts against http_req_failed.
+  const bootstrapping = !provisioned;
+  if (bootstrapping) {
+    params.responseCallback = http.expectedStatuses(200, 401);
+  }
+
+  let res = http.post(`${BASE_URL}/auth/login`, loginBody, params);
+
+  if (bootstrapping && res.status === 401) {
+    res = http.post(`${BASE_URL}/auth/register`, JSON.stringify(creds), {
+      headers: JSON_HEADERS,
+      tags: { name: 'POST /auth/register' },
+      timeout: '15s',
+      // 409 only means the account already exists — a re-run against a
+      // long-lived server, or another VU that got there first. Log in instead.
+      responseCallback: http.expectedStatuses(201, 409),
+    });
+
+    if (res.status === 409) {
+      res = http.post(`${BASE_URL}/auth/login`, loginBody, {
+        headers: JSON_HEADERS,
+        tags: { name: 'POST /auth/login' },
+        timeout: '15s',
+      });
+    }
+  }
+
+  provisioned = true;
+
+  recordPhaseTiming(res);
 
   const passed = check(res, {
-    'login returns 200': (r) => r.status === 200,
-    'login has token': (r) => {
+    'auth returns 200 or 201': (r) => r.status === 200 || r.status === 201,
+    'auth has token': (r) => {
       try {
         return JSON.parse(r.body).token !== undefined;
       } catch {
@@ -114,11 +194,7 @@ function getWorkouts(token) {
 
   const res = http.get(`${BASE_URL}/workouts`, params);
 
-  if (isSpikePeriod()) {
-    spikeResponseTime.add(res.timings.duration);
-  } else {
-    recoveryResponseTime.add(res.timings.duration);
-  }
+  recordPhaseTiming(res);
 
   const passed = check(res, {
     'get workouts returns 200': (r) => r.status === 200,
@@ -140,13 +216,14 @@ function getWorkouts(token) {
 }
 
 function postWorkout(token) {
-  const exerciseTypes = ['Running', 'Cycling', 'Swimming', 'Weightlifting', 'Yoga'];
-  const randomExercise = exerciseTypes[Math.floor(Math.random() * exerciseTypes.length)];
+  const randomExercise = EXERCISE_TYPES[Math.floor(Math.random() * EXERCISE_TYPES.length)];
 
   const payload = JSON.stringify({
-    userId: __VU,
+    // userId is deliberately omitted: the server stamps it from the bearer
+    // token. Sending the VU number here overwrote it with an id belonging to a
+    // completely different (seeded) user.
     exerciseType: randomExercise,
-    durationMinutes: Math.floor(Math.random() * 60) + 10,
+    durationMinutes: Math.floor(Math.random() * 60) + 10, // 10 to 69 minutes, inside the API's 1-1440 range
     notes: `Spike test VU ${__VU}`,
     date: new Date().toISOString(),
   });
@@ -162,11 +239,7 @@ function postWorkout(token) {
 
   const res = http.post(`${BASE_URL}/workouts`, payload, params);
 
-  if (isSpikePeriod()) {
-    spikeResponseTime.add(res.timings.duration);
-  } else {
-    recoveryResponseTime.add(res.timings.duration);
-  }
+  recordPhaseTiming(res);
 
   const passed = check(res, {
     'post workout returns 2xx': (r) => r.status >= 200 && r.status < 300,
@@ -190,7 +263,7 @@ export default function () {
   let token = null;
 
   group('Spike - Authentication', () => {
-    token = login();
+    token = authenticate();
   });
 
   if (!token) {
@@ -201,9 +274,14 @@ export default function () {
   group('Spike - User Activity', () => {
     // During spike, simulate aggressive user behavior
     if (isSpikePeriod()) {
-      // Multiple rapid requests to simulate real spike behavior
+      // Multiple rapid requests to simulate real spike behavior. Reads dominate;
+      // writing on every iteration inflated the workout collection that every
+      // GET /workouts returns in full, so the read latency being measured
+      // drifted towards measuring the test's own data growth.
       rapidFireReads(token, 2);
-      postWorkout(token);
+      if (Math.random() < 0.3) {
+        postWorkout(token);
+      }
     } else {
       // Normal pace during baseline/recovery
       getWorkouts(token);

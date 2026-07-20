@@ -18,6 +18,15 @@ import { Rate, Trend, Counter } from 'k6/metrics';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:5000/api';
 
+const JSON_HEADERS = { 'Content-Type': 'application/json' };
+
+/**
+ * Exercise types the API accepts. Anything outside this list is rejected with a
+ * 400, so an invalid value would be recorded as a server failure under stress
+ * when it is really a malformed request from the test itself.
+ */
+const EXERCISE_TYPES = ['Running', 'Cycling', 'Swimming', 'Yoga', 'Weight Training'];
+
 // Custom metrics
 const errorRate = new Rate('errors');
 const requestDuration = new Trend('request_duration', true);
@@ -44,25 +53,84 @@ export const options = {
   userAgent: 'k6-stress-test/1.0',
 };
 
-function login() {
-  const payload = JSON.stringify({
+/**
+ * Whether this VU has already been through the login/register bootstrap.
+ *
+ * k6 gives every VU its own JS runtime, so module-level state is per-VU and
+ * survives across that VU's iterations — exactly the scope needed to remember
+ * that the account no longer has to be provisioned.
+ */
+let provisioned = false;
+
+/**
+ * Credentials for this VU's own account.
+ *
+ * Built on demand instead of as a module constant because __VU is 0 while the
+ * init context runs; a constant would hand every VU the same `_0` account.
+ */
+function credentials() {
+  return {
     email: `stresstest_user_${__VU}@example.com`,
     password: 'StressTest1234!',
-  });
+    displayName: `Stress Test VU ${__VU}`,
+  };
+}
+
+/**
+ * Authenticate, creating this VU's account the first time it is needed.
+ *
+ * The API only seeds three shared users, so a per-VU account has to be
+ * self-provisioned: the first login is expected to 401 and is answered with a
+ * register call. That handshake is setup rather than a fault, so it is kept out
+ * of the checks, errorRate and http_req_failed — otherwise the run would open
+ * with one guaranteed error per VU before any load is actually applied.
+ */
+function authenticate() {
+  const creds = credentials();
+  const loginBody = JSON.stringify({ email: creds.email, password: creds.password });
 
   const params = {
-    headers: { 'Content-Type': 'application/json' },
+    headers: JSON_HEADERS,
     tags: { name: 'POST /auth/login' },
     timeout: '10s',
   };
 
-  const res = http.post(`${BASE_URL}/auth/login`, payload, params);
+  // Only the bootstrap attempt is allowed to treat 401 as an expected status.
+  // Every later login uses the default callback, so a genuine 401 once the
+  // account exists still counts against http_req_failed.
+  const bootstrapping = !provisioned;
+  if (bootstrapping) {
+    params.responseCallback = http.expectedStatuses(200, 401);
+  }
+
+  let res = http.post(`${BASE_URL}/auth/login`, loginBody, params);
+
+  if (bootstrapping && res.status === 401) {
+    res = http.post(`${BASE_URL}/auth/register`, JSON.stringify(creds), {
+      headers: JSON_HEADERS,
+      tags: { name: 'POST /auth/register' },
+      timeout: '10s',
+      // 409 only means the account already exists — a re-run against a
+      // long-lived server, or another VU that got there first. Log in instead.
+      responseCallback: http.expectedStatuses(201, 409),
+    });
+
+    if (res.status === 409) {
+      res = http.post(`${BASE_URL}/auth/login`, loginBody, {
+        headers: JSON_HEADERS,
+        tags: { name: 'POST /auth/login' },
+        timeout: '10s',
+      });
+    }
+  }
+
+  provisioned = true;
 
   requestDuration.add(res.timings.duration);
 
   const passed = check(res, {
-    'login status 200': (r) => r.status === 200,
-    'login response time < 2s': (r) => r.timings.duration < 2000,
+    'auth status 200 or 201': (r) => r.status === 200 || r.status === 201,
+    'auth response time < 2s': (r) => r.timings.duration < 2000,
   });
 
   if (!passed) {
@@ -110,12 +178,13 @@ function getWorkouts(token) {
 }
 
 function postWorkout(token) {
-  const exerciseTypes = ['Running', 'Cycling', 'Swimming', 'Weightlifting', 'Yoga', 'HIIT', 'Pilates'];
-  const randomExercise = exerciseTypes[Math.floor(Math.random() * exerciseTypes.length)];
-  const randomDuration = Math.floor(Math.random() * 120) + 10;
+  const randomExercise = EXERCISE_TYPES[Math.floor(Math.random() * EXERCISE_TYPES.length)];
+  const randomDuration = Math.floor(Math.random() * 120) + 10; // 10 to 129 minutes, inside the API's 1-1440 range
 
   const payload = JSON.stringify({
-    userId: __VU,
+    // userId is deliberately omitted: the server stamps it from the bearer
+    // token. Sending the VU number here overwrote it with an id belonging to a
+    // completely different (seeded) user.
     exerciseType: randomExercise,
     durationMinutes: randomDuration,
     notes: `Stress test VU ${__VU}, iter ${__ITER}`,
@@ -157,6 +226,10 @@ function getWorkoutById(token, id) {
     },
     tags: { name: 'GET /workouts/:id' },
     timeout: '10s',
+    // The id is picked at random and may simply not exist. The check below
+    // already treats that as a valid outcome, so it must not inflate
+    // http_req_failed either.
+    responseCallback: http.expectedStatuses(200, 404),
   };
 
   const res = http.get(`${BASE_URL}/workouts/${id}`, params);
@@ -180,7 +253,7 @@ export default function () {
   let token = null;
 
   group('Stress - Login', () => {
-    token = login();
+    token = authenticate();
   });
 
   if (!token) {

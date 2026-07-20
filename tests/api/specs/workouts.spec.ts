@@ -13,7 +13,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { ApiClient } from '../helpers/api-client';
+import { ApiClient, type WorkoutResponse } from '../helpers/api-client';
 import { createTestWorkout } from '../../shared/test-helpers';
 
 let client: ApiClient;
@@ -99,7 +99,7 @@ test.describe('POST /api/workouts', () => {
     const workouts = await listResponse.json();
 
     // THEN the new workout should be in the list
-    const found = workouts.find((w: any) => w.id === created.id);
+    const found = workouts.find((w: WorkoutResponse) => w.id === created.id);
     expect(found).toBeTruthy();
   });
 
@@ -175,7 +175,7 @@ test.describe('DELETE /api/workouts/:id', () => {
     const workouts = await listResponse.json();
 
     // THEN the deleted workout should not be in the list
-    const found = workouts.find((w: any) => w.id === created.id);
+    const found = workouts.find((w: WorkoutResponse) => w.id === created.id);
     expect(found).toBeFalsy();
   });
 
@@ -194,16 +194,63 @@ test.describe('DELETE /api/workouts/:id', () => {
 // ─── Feature: Filtering / Pagination ────────────────────────────────────────
 
 test.describe('Workout Filtering', () => {
-  test('should support filtering workouts by exerciseType via query param', async () => {
-    // json-server supports ?exerciseType=Running out of the box
-    const response = await client.getWorkouts();
-    const allWorkouts = await response.json();
+  /*
+   * This previously fetched the unfiltered list and asserted the Running subset
+   * was ">= 0" and "<= total" — both tautologies. It never sent a query
+   * parameter, so it passed even while filtered requests were returning 404.
+   */
+  test('should return only the requested user\'s workouts when filtering by userId', async () => {
+    // GIVEN the full, unfiltered collection spans more than one user
+    const allResponse = await client.getWorkouts();
+    const allWorkouts: WorkoutResponse[] = await allResponse.json();
+    const userIds = new Set(allWorkouts.map((w) => w.userId));
+    expect(userIds.size).toBeGreaterThan(1);
 
-    // Verify that filtered results are a subset
-    const runningWorkouts = allWorkouts.filter(
-      (w: any) => w.exerciseType === 'Running',
-    );
-    expect(runningWorkouts.length).toBeGreaterThanOrEqual(0);
-    expect(runningWorkouts.length).toBeLessThanOrEqual(allWorkouts.length);
+    // WHEN the caller filters to a single user
+    const filteredResponse = await client.getWorkouts({ userId: 1 });
+    expect(filteredResponse.status()).toBe(200);
+    const filtered: WorkoutResponse[] = await filteredResponse.json();
+
+    // THEN every record belongs to that user, and the set is a strict subset
+    expect(filtered.length).toBeGreaterThan(0);
+    expect(filtered.every((w) => w.userId === 1)).toBe(true);
+    expect(filtered.length).toBeLessThan(allWorkouts.length);
+  });
+
+  test('should return workouts ordered newest first', async () => {
+    const response = await client.getWorkouts();
+    const workouts: WorkoutResponse[] = await response.json();
+
+    const dates = workouts.map((w) => new Date(w.date).getTime());
+    const descending = [...dates].sort((a, b) => b - a);
+    expect(dates).toEqual(descending);
+  });
+});
+
+// ─── Known Defect: authorization scope ──────────────────────────────────────
+
+test.describe('Workout Authorization Scope', () => {
+  /*
+   * KNOWN DEFECT - intentionally skipped, not deleted.
+   *
+   * GET /api/workouts requires a bearer token but never scopes results to the
+   * caller: it returns every user's workouts unless an explicit ?userId= is
+   * supplied. WorkoutsController.GetAll in the .NET API has the same shape, so
+   * this is a defect in the service, not an artefact of the mock.
+   *
+   * It is inconsistent with /api/analytics/summary, which does derive userId
+   * from the token. Left skipped so the expected behaviour stays documented and
+   * the suite starts enforcing it the moment the endpoint is fixed.
+   */
+  test.skip('should only return workouts belonging to the authenticated user', async () => {
+    // GIVEN a user authenticated as user 1
+    await client.login('test@example.com', 'password123');
+
+    // WHEN listing workouts without an explicit userId filter
+    const response = await client.getWorkouts();
+    const workouts: WorkoutResponse[] = await response.json();
+
+    // THEN no other user's records should be visible
+    expect(workouts.every((w) => w.userId === 1)).toBe(true);
   });
 });

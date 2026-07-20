@@ -6,6 +6,8 @@
     "test": "npx playwright test",
     "test:api": "npx playwright test --project=api",
     "test:web": "npx playwright test --project=web",
+    "lint": "eslint . --max-warnings 0",
+    "typecheck": "tsc --noEmit",
     "test:headed": "npx playwright test --project=web --headed",
     "test:debug": "npx playwright test --debug",
     "report:allure": "npx allure generate reports/allure-results --clean -o reports/allure-report && npx allure open reports/allure-report",
@@ -14,12 +16,15 @@
   },
   "dependencies": {
     "@playwright/test": "^1.48.0",
-    "allure-playwright": "^3.0.0",
     "ajv": "^8.17.0",
+    "allure-playwright": "^3.0.0",
     "dotenv": "^16.4.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "typescript": "^5.6.0"
+    "ajv-formats": "^3.0.1",
+    "eslint": "^9.39.5",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.64.0"
   }
 }

@@ -78,9 +78,14 @@ test.describe('Tab Navigation', () => {
       // Ionic adds "tab-selected" class or aria-selected to the active tab button
       const tabButton = workoutsTab.locator('ion-tab-button, a, button').first();
       if (await tabButton.count() > 0) {
-        const classes = await tabButton.getAttribute('class');
-        // At minimum we verify the tab is interactable and the page loaded
+        // Ionic marks the active tab with a tab-selected class or aria-selected.
+        // Reading the attribute without asserting on it meant this test only
+        // ever checked the URL, so the selected state is now verified too.
+        const classes = (await tabButton.getAttribute('class')) ?? '';
+        const ariaSelected = await tabButton.getAttribute('aria-selected');
+
         expect(page.url()).toContain(URLS.WORKOUTS);
+        expect(classes.includes('tab-selected') || ariaSelected === 'true').toBe(true);
       }
     }
   });
@@ -145,8 +150,11 @@ test.describe('Back Button', () => {
     await page.goBack();
     await page.waitForTimeout(1_000);
 
-    // THEN they should return to the workouts list
-    expect(page.url()).toContain(URLS.WORKOUTS);
+    // THEN they should land back on the exact URL they came from, not merely
+    // somewhere under /workouts — going back from /workouts/add to /workouts
+    // is the behaviour under test, and a substring check would pass even if
+    // the browser stayed on the add-workout page.
+    expect(page.url()).toBe(workoutsUrl);
   });
 
   test('should handle Ionic back button if present', async ({ page }) => {

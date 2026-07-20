@@ -64,7 +64,7 @@ test.describe('Invalid Credentials', () => {
 
     // THEN an error message should appear
     const error = await loginPage.getErrorMessage();
-    expect(error).toContain('Invalid');
+    expect(error).toContain(ERROR_MESSAGES.INVALID_CREDENTIALS);
   });
 
   test('should show an error message when password is wrong', async () => {
@@ -73,10 +73,13 @@ test.describe('Invalid Credentials', () => {
     await loginPage.fillPassword(WRONG_PASSWORD.password);
     await loginPage.clickLogin();
 
-    // THEN an error message should appear — same message as nonexistent email
-    // (prevents user enumeration attacks)
+    // THEN an error message should appear — byte-for-byte the same message the
+    // unregistered-email case returns. Asserting on the shared constant rather
+    // than a loose substring is what makes this a user-enumeration check: a
+    // backend that started distinguishing "no such user" from "wrong password"
+    // would fail here.
     const error = await loginPage.getErrorMessage();
-    expect(error).toContain('Invalid');
+    expect(error).toContain(ERROR_MESSAGES.INVALID_CREDENTIALS);
   });
 
   test('should NOT redirect to dashboard on failed login', async ({ page }) => {
@@ -124,9 +127,9 @@ test.describe('Empty Field Validation', () => {
     await loginPage.fillEmail(VALID_USER.email);
     await loginPage.fillPassword(VALID_USER.password);
 
-    // THEN the login button should be enabled
-    const disabled = await loginPage.isSubmitDisabled();
-    expect(disabled).toBe(false);
+    // THEN the login button should become enabled
+    await loginPage.waitForSubmitEnabled();
+    expect(await loginPage.isSubmitDisabled()).toBe(false);
   });
 });
 

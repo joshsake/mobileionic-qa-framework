@@ -71,19 +71,21 @@ export const SELECTORS = {
   DASHBOARD_STATS: '[data-testid="dashboard-stats"]',
 
   // Workouts list
+  // Individual rows are tagged workout-list-item-0, -1, … so the item selector
+  // matches on the prefix rather than an exact value.
   WORKOUT_LIST: '[data-testid="workout-list"]',
-  WORKOUT_ITEM: '[data-testid="workout-item"]',
-  WORKOUT_ADD_BTN: '[data-testid="workout-add-btn"]',
+  WORKOUT_ITEM: '[data-testid^="workout-list-item-"]',
+  WORKOUT_ADD_BTN: '[data-testid="add-workout-fab"]',
   WORKOUT_SEARCH: '[data-testid="workout-search"]',
-  WORKOUT_COUNT: '[data-testid="workout-count"]',
+  WORKOUT_EMPTY_STATE: '[data-testid="workout-empty-state"]',
 
-  // Add workout form
-  EXERCISE_TYPE_SELECT: '[data-testid="exercise-type-select"]',
-  DURATION_INPUT: '[data-testid="duration-input"]',
-  NOTES_INPUT: '[data-testid="notes-input"]',
-  DATE_INPUT: '[data-testid="date-input"]',
-  WORKOUT_SUBMIT_BTN: '[data-testid="workout-submit-btn"]',
-  VALIDATION_ERROR: '[data-testid="validation-error"]',
+  // Add workout form — the app namespaces every control with an add-workout- prefix
+  EXERCISE_TYPE_SELECT: '[data-testid="add-workout-exercise-select"]',
+  DURATION_INPUT: '[data-testid="add-workout-duration-input"]',
+  NOTES_INPUT: '[data-testid="add-workout-notes-input"]',
+  DATE_INPUT: '[data-testid="add-workout-date-input"]',
+  WORKOUT_SUBMIT_BTN: '[data-testid="add-workout-submit-btn"]',
+  VALIDATION_ERROR: '[data-testid="add-workout-error"]',
 
   // Profile
   PROFILE_NAME: '[data-testid="profile-name"]',

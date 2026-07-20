@@ -12,7 +12,7 @@
  *     deterministic.
  */
 
-import { type Page, type Locator, expect } from '@playwright/test';
+import { type Page, type Locator } from '@playwright/test';
 import { TIMEOUTS } from '../../shared/constants';
 
 export abstract class BasePage {
@@ -110,13 +110,16 @@ export abstract class BasePage {
   }
 
   /**
-   * Fill an ion-input by locating its inner native <input> element.
-   * Ionic wraps native inputs in shadow DOM; this helper pierces through.
+   * Fill an ion-input/ion-textarea by locating the native control inside it.
+   *
+   * The wrapper element cannot be filled directly. ion-textarea renders a
+   * <textarea> rather than an <input>, so both are matched — otherwise notes
+   * fields fall through to the slower click-and-type path.
    */
   async fillIonicInput(selector: string, value: string): Promise<void> {
     const ionInput = this.page.locator(selector);
-    // Ionic v7+ uses slotted inputs — try native input first
-    const nativeInput = ionInput.locator('input');
+    // Ionic v7+ uses slotted inputs — try the native control first
+    const nativeInput = ionInput.locator('input, textarea');
     if (await nativeInput.count() > 0) {
       await nativeInput.fill(value);
     } else {

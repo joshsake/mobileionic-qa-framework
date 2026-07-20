@@ -16,6 +16,15 @@ import { Rate, Trend } from 'k6/metrics';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:5000/api';
 
+const JSON_HEADERS = { 'Content-Type': 'application/json' };
+
+/**
+ * Exercise types the API accepts. Anything outside this list is rejected with a
+ * 400, which would turn every write into a recorded failure instead of the
+ * latency sample this test is trying to collect.
+ */
+const EXERCISE_TYPES = ['Running', 'Cycling', 'Swimming', 'Yoga', 'Weight Training'];
+
 // Custom metrics
 const loginDuration = new Trend('login_duration', true);
 const getWorkoutsDuration = new Trend('get_workouts_duration', true);
@@ -42,27 +51,84 @@ export const options = {
 };
 
 /**
- * Authenticate and return a JWT token.
+ * Whether this VU has already been through the login/register bootstrap.
+ *
+ * k6 gives every VU its own JS runtime, so module-level state is per-VU and
+ * survives across that VU's iterations — exactly the scope needed to remember
+ * that the account no longer has to be provisioned.
  */
-function login() {
-  const payload = JSON.stringify({
+let provisioned = false;
+
+/**
+ * Credentials for this VU's own account.
+ *
+ * Built on demand instead of as a module constant because __VU is 0 while the
+ * init context runs; a constant would hand every VU the same `_0` account.
+ */
+function credentials() {
+  return {
     email: `loadtest_user_${__VU}@example.com`,
     password: 'LoadTest1234!',
-  });
+    displayName: `Load Test VU ${__VU}`,
+  };
+}
+
+/**
+ * Authenticate, creating this VU's account the first time it is needed.
+ *
+ * The API only seeds three shared users, so a per-VU account has to be
+ * self-provisioned: the first login is expected to 401 and is answered with a
+ * register call. That handshake is setup rather than a fault, so it is kept out
+ * of the checks, errorRate and http_req_failed — otherwise every run starts
+ * with one guaranteed error per VU and the 1% thresholds can never pass.
+ */
+function authenticate() {
+  const creds = credentials();
+  const loginBody = JSON.stringify({ email: creds.email, password: creds.password });
 
   const params = {
-    headers: { 'Content-Type': 'application/json' },
+    headers: JSON_HEADERS,
     tags: { name: 'POST /auth/login' },
   };
 
-  const res = http.post(`${BASE_URL}/auth/login`, payload, params);
+  // Only the bootstrap attempt is allowed to treat 401 as an expected status.
+  // Every later login uses the default callback, so a genuine 401 once the
+  // account exists still counts against http_req_failed.
+  const bootstrapping = !provisioned;
+  if (bootstrapping) {
+    params.responseCallback = http.expectedStatuses(200, 401);
+  }
 
-  loginDuration.add(res.timings.duration);
-  errorRate.add(res.status !== 200);
+  let res = http.post(`${BASE_URL}/auth/login`, loginBody, params);
 
-  check(res, {
-    'login returns 200': (r) => r.status === 200,
-    'login response has token': (r) => {
+  if (bootstrapping && res.status === 401) {
+    res = http.post(`${BASE_URL}/auth/register`, JSON.stringify(creds), {
+      headers: JSON_HEADERS,
+      tags: { name: 'POST /auth/register' },
+      // 409 only means the account already exists — a re-run against a
+      // long-lived server, or another VU that got there first. Log in instead.
+      responseCallback: http.expectedStatuses(201, 409),
+    });
+
+    if (res.status === 409) {
+      res = http.post(`${BASE_URL}/auth/login`, loginBody, {
+        headers: JSON_HEADERS,
+        tags: { name: 'POST /auth/login' },
+      });
+    }
+  }
+
+  provisioned = true;
+
+  // The one-off register round trip is provisioning overhead, not the
+  // steady-state login latency this trend and its threshold are policing.
+  if (!bootstrapping) {
+    loginDuration.add(res.timings.duration);
+  }
+
+  const authenticated = check(res, {
+    'auth returns 200 or 201': (r) => r.status === 200 || r.status === 201,
+    'auth response has token': (r) => {
       try {
         const body = JSON.parse(r.body);
         return body.token !== undefined;
@@ -70,17 +136,20 @@ function login() {
         return false;
       }
     },
-    'login duration < 1s': (r) => r.timings.duration < 1000,
+    'auth duration < 1s': (r) => r.timings.duration < 1000,
   });
 
-  if (res.status === 200) {
-    try {
-      return JSON.parse(res.body).token;
-    } catch {
-      return null;
-    }
+  errorRate.add(!authenticated);
+
+  if (!authenticated) {
+    return null;
   }
-  return null;
+
+  try {
+    return JSON.parse(res.body).token;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -118,12 +187,13 @@ function getWorkouts(token) {
  * Create a new workout record.
  */
 function postWorkout(token) {
-  const exerciseTypes = ['Running', 'Cycling', 'Swimming', 'Weightlifting', 'Yoga'];
-  const randomExercise = exerciseTypes[Math.floor(Math.random() * exerciseTypes.length)];
-  const randomDuration = Math.floor(Math.random() * 90) + 15; // 15 to 105 minutes
+  const randomExercise = EXERCISE_TYPES[Math.floor(Math.random() * EXERCISE_TYPES.length)];
+  const randomDuration = Math.floor(Math.random() * 90) + 15; // 15 to 105 minutes, inside the API's 1-1440 range
 
   const payload = JSON.stringify({
-    userId: __VU,
+    // userId is deliberately omitted: the server stamps it from the bearer
+    // token. Sending the VU number here overwrote it with an id belonging to a
+    // completely different (seeded) user.
     exerciseType: randomExercise,
     durationMinutes: randomDuration,
     notes: `Load test workout from VU ${__VU}, iteration ${__ITER}`,
@@ -161,7 +231,7 @@ export default function () {
   let token = null;
 
   group('Authentication', () => {
-    token = login();
+    token = authenticate();
   });
 
   if (!token) {
@@ -196,7 +266,7 @@ export function handleSummary(data) {
   };
 }
 
-function textSummary(data, opts) {
+function textSummary(data, _opts) {
   // k6 built-in summary is used by default; this is a placeholder for custom formatting
   return JSON.stringify(data.metrics, null, 2);
 }

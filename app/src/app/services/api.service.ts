@@ -4,12 +4,20 @@ import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { AuthService } from './auth.service';
 
+/**
+ * Field names mirror the API payload exactly (see api/dotnet-api/Models/Workout.cs
+ * and the contract schemas in tests/api/schemas). They previously read
+ * `exercise` and `duration`, which no endpoint has ever returned, so every
+ * rendered workout showed undefined values.
+ */
 export interface Workout {
   id?: number;
-  exercise: string;
-  duration: number;
+  userId?: number;
+  exerciseType: string;
+  durationMinutes: number;
   date: string;
-  notes?: string;
+  notes?: string | null;
+  createdAt?: string;
 }
 
 export interface UserProfile {
@@ -21,9 +29,17 @@ export interface UserProfile {
   height?: number;
 }
 
+/**
+ * Matches the auth endpoint's actual response. The previous shape declared a
+ * nested `user` object that the backend never sends; anything reading it would
+ * have got undefined at runtime despite type-checking cleanly.
+ */
 export interface LoginResponse {
   token: string;
-  user: UserProfile;
+  expiresAt: string;
+  userId: number;
+  displayName: string;
+  email: string;
 }
 
 @Injectable({ providedIn: 'root' })

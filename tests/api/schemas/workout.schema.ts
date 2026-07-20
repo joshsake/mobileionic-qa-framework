@@ -11,7 +11,15 @@
  *   Schemas mirror the C# Workout model in api/dotnet-api/Models/Workout.cs.
  */
 
-import type { JSONSchemaType } from 'ajv';
+/*
+ * These are annotated as ajv's `Schema` rather than `Schema`.
+ * JSONSchemaType cannot express a nullable property whose TypeScript type is a
+ * `string | null` union - it demands `nullable: false` for a `type: 'string'`
+ * entry - so `notes` made the whole schema fail to compile. Runtime validation
+ * is identical either way; the interfaces below still document the shape and
+ * are what the specs assert against.
+ */
+import type { Schema } from 'ajv';
 
 // ─── Single Workout Response Schema ─────────────────────────────────────────
 
@@ -29,7 +37,7 @@ export interface WorkoutSchema {
  * Schema for a single workout object returned by GET /api/workouts/:id
  * or as an element in the GET /api/workouts array.
  */
-export const workoutSchema: JSONSchemaType<WorkoutSchema> = {
+export const workoutSchema: Schema = {
   type: 'object',
   properties: {
     id: { type: 'number' },
@@ -47,7 +55,7 @@ export const workoutSchema: JSONSchemaType<WorkoutSchema> = {
     date: { type: 'string', format: 'date-time' },
     createdAt: { type: 'string', format: 'date-time' },
   },
-  required: ['id', 'userId', 'exerciseType', 'durationMinutes', 'date', 'createdAt'],
+  required: ['id', 'userId', 'exerciseType', 'durationMinutes', 'notes', 'date', 'createdAt'],
   additionalProperties: true, // Allow extra fields without failing
 };
 
@@ -56,7 +64,7 @@ export const workoutSchema: JSONSchemaType<WorkoutSchema> = {
 /**
  * Schema for the array returned by GET /api/workouts.
  */
-export const workoutListSchema: JSONSchemaType<WorkoutSchema[]> = {
+export const workoutListSchema: Schema = {
   type: 'array',
   items: workoutSchema,
 };
@@ -71,7 +79,7 @@ export interface WorkoutCreateRequest {
   date: string;
 }
 
-export const workoutCreateSchema: JSONSchemaType<WorkoutCreateRequest> = {
+export const workoutCreateSchema: Schema = {
   type: 'object',
   properties: {
     exerciseType: { type: 'string' },
