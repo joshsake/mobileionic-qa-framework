@@ -247,12 +247,13 @@ jobs:
         run: npm ci
         working-directory: tests/e2e-mobile
 
-      # Appium 2 does not auto-register drivers that merely sit in node_modules;
-      # a UiAutomator2 session fails unless the driver is installed into
-      # APPIUM_HOME (~/.appium). This is a regular step, so working-directory is
-      # honoured and npx resolves the local appium binary.
-      - name: Install Appium UiAutomator2 driver
-        run: npx appium driver install uiautomator2
+      # Ensure the UiAutomator2 driver is available to Appium. The
+      # appium-uiautomator2-driver dependency already registers it, so this
+      # no-ops in CI ("already installed"); the `|| true` keeps that expected
+      # exit code from failing the job, while still installing the driver in an
+      # environment where it is somehow absent.
+      - name: Ensure Appium UiAutomator2 driver
+        run: npx appium driver install uiautomator2 || true
         working-directory: tests/e2e-mobile
 
       - name: Build Ionic app
