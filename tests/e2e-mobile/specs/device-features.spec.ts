@@ -9,7 +9,7 @@ describe('Device Features - Mobile', () => {
   };
 
   before(async () => {
-    await driver.terminateApp('com.qaframework.fitnesstracker');
+    await driver.terminateApp('com.qaframework.fitnesstracker', {});
     await driver.activateApp('com.qaframework.fitnesstracker');
     await loginScreen.waitForLoginScreen();
   });
@@ -72,7 +72,7 @@ describe('Device Features - Mobile', () => {
 
   describe('Back Button Behavior', () => {
     beforeEach(async () => {
-      await driver.terminateApp('com.qaframework.fitnesstracker');
+      await driver.terminateApp('com.qaframework.fitnesstracker', {});
       await driver.activateApp('com.qaframework.fitnesstracker');
       await loginScreen.waitForLoginScreen();
     });
@@ -119,7 +119,7 @@ describe('Device Features - Mobile', () => {
 
   describe('App Backgrounding and Foregrounding', () => {
     beforeEach(async () => {
-      await driver.terminateApp('com.qaframework.fitnesstracker');
+      await driver.terminateApp('com.qaframework.fitnesstracker', {});
       await driver.activateApp('com.qaframework.fitnesstracker');
       await loginScreen.waitForLoginScreen();
     });
@@ -150,7 +150,7 @@ describe('Device Features - Mobile', () => {
     });
 
     it('should recover after being terminated and relaunched', async () => {
-      await driver.terminateApp('com.qaframework.fitnesstracker');
+      await driver.terminateApp('com.qaframework.fitnesstracker', {});
       await browser.pause(2000);
 
       await driver.activateApp('com.qaframework.fitnesstracker');

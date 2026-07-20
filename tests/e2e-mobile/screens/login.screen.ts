@@ -24,31 +24,34 @@ export class LoginScreen extends BaseScreen {
   }
 
   /**
-   * Get the email input element.
+   * Get the email input element (the ion-input host).
+   *
+   * For typing use enterCredentials(), which reaches the inner native <input>;
+   * this getter is for presence/tap checks where the host element is correct.
    */
   get emailInput() {
-    return $(`~${this.selectors.emailInput}`);
+    return $(this.sel(this.selectors.emailInput));
   }
 
   /**
-   * Get the password input element.
+   * Get the password input element (the ion-input host).
    */
   get passwordInput() {
-    return $(`~${this.selectors.passwordInput}`);
+    return $(this.sel(this.selectors.passwordInput));
   }
 
   /**
    * Get the login button element.
    */
   get loginButton() {
-    return $(`~${this.selectors.loginButton}`);
+    return $(this.sel(this.selectors.loginButton));
   }
 
   /**
    * Get the error message element (visible only on login failure).
    */
   get errorMessage() {
-    return $(`~${this.selectors.errorMessage}`);
+    return $(this.sel(this.selectors.errorMessage));
   }
 
   /**
@@ -72,6 +75,17 @@ export class LoginScreen extends BaseScreen {
   async login(email: string, password: string): Promise<void> {
     await this.enterCredentials(email, password);
     await this.tapLogin();
+  }
+
+  /**
+   * Whether the login button is enabled.
+   *
+   * Reads the reflected `disabled` attribute rather than isEnabled(), which
+   * always reports true for a custom element like ion-button. The app disables
+   * the button until both fields are filled ([disabled]="!email || !password").
+   */
+  async isLoginButtonEnabled(): Promise<boolean> {
+    return !(await this.hasAttribute(this.selectors.loginButton, 'disabled'));
   }
 
   /**

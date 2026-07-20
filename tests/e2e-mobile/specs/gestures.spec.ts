@@ -13,7 +13,7 @@ describe('Gesture Tests - Mobile', () => {
   };
 
   before(async () => {
-    await driver.terminateApp('com.qaframework.fitnesstracker');
+    await driver.terminateApp('com.qaframework.fitnesstracker', {});
     await driver.activateApp('com.qaframework.fitnesstracker');
     await loginScreen.waitForLoginScreen();
     await loginScreen.login(validUser.email, validUser.password);

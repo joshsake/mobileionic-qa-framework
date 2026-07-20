@@ -14,7 +14,7 @@ describe('Workouts Screen - Mobile', () => {
 
   before(async () => {
     // Login once before the suite to reach the workouts screen
-    await driver.terminateApp('com.qaframework.fitnesstracker');
+    await driver.terminateApp('com.qaframework.fitnesstracker', {});
     await driver.activateApp('com.qaframework.fitnesstracker');
     await loginScreen.waitForLoginScreen();
     await loginScreen.login(validUser.email, validUser.password);

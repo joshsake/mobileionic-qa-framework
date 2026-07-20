@@ -1,16 +1,30 @@
 import { LoginScreen } from '../screens/login.screen';
 
+/*
+ * Iteration 1 of the hybrid-mobile fix proves the automation *bridge* — that a
+ * booted emulator, the WEBVIEW context switch, CSS data-testid selectors and
+ * the native device commands (keyboard, orientation) all work against the
+ * Capacitor app. Those tests need no backend.
+ *
+ * The three tests that drive a real login are skipped for now: the app's
+ * webview calls the mock API over the network, and reaching a host-side mock
+ * from inside the emulator needs its own plumbing (adb reverse / 10.0.2.2 plus
+ * cleartext, and the app is served over https so an http API call is mixed
+ * content). That is tracked as the next iteration in MOBILE.md; the credentials
+ * below already match the mock so those tests are correct once it lands.
+ */
 describe('Login Screen - Mobile', () => {
   const loginScreen = new LoginScreen();
 
   const validUser = {
-    email: 'testuser@example.com',
-    password: 'Test1234!',
+    email: 'test@example.com',
+    password: 'password123',
   };
 
   beforeEach(async () => {
-    // Restart the app to ensure a fresh login screen
-    await driver.terminateApp('com.qaframework.fitnesstracker');
+    // Restart the app to ensure a fresh login screen. waitForLoginScreen()
+    // re-selects the WEBVIEW context, which the relaunch invalidates.
+    await driver.terminateApp('com.qaframework.fitnesstracker', {});
     await driver.activateApp('com.qaframework.fitnesstracker');
     await loginScreen.waitForLoginScreen();
   });
@@ -22,7 +36,8 @@ describe('Login Screen - Mobile', () => {
       expect(title).toContain('Sign In');
     });
 
-    it('should navigate to dashboard after entering valid credentials', async () => {
+    // Needs the mock API reachable from the emulator — see MOBILE.md (networking).
+    it.skip('should navigate to dashboard after entering valid credentials', async () => {
       await loginScreen.login(validUser.email, validUser.password);
 
       // Verify we left the login screen (navigated to dashboard)
@@ -33,7 +48,8 @@ describe('Login Screen - Mobile', () => {
   });
 
   describe('Failed Login', () => {
-    it('should display an error message with invalid credentials', async () => {
+    // Needs the mock API reachable from the emulator — see MOBILE.md (networking).
+    it.skip('should display an error message with invalid credentials', async () => {
       await loginScreen.login('wrong@example.com', 'WrongPass!');
 
       await browser.pause(2000);
@@ -42,21 +58,18 @@ describe('Login Screen - Mobile', () => {
       expect(errorText.length).toBeGreaterThan(0);
     });
 
-    it('should display an error message with empty password', async () => {
+    it('should keep the login button disabled when password is empty', async () => {
       await loginScreen.enterCredentials(validUser.email, '');
 
-      // Login button should be disabled when password is empty
-      const loginBtn = await loginScreen.loginButton;
-      const isEnabled = await loginBtn.isEnabled();
-      expect(isEnabled).toBe(false);
+      // Read the reflected disabled attribute, not isEnabled() — the latter
+      // always returns true for the ion-button custom element.
+      expect(await loginScreen.isLoginButtonEnabled()).toBe(false);
     });
 
-    it('should display an error message with empty email', async () => {
+    it('should keep the login button disabled when email is empty', async () => {
       await loginScreen.enterCredentials('', validUser.password);
 
-      const loginBtn = await loginScreen.loginButton;
-      const isEnabled = await loginBtn.isEnabled();
-      expect(isEnabled).toBe(false);
+      expect(await loginScreen.isLoginButtonEnabled()).toBe(false);
     });
   });
 
@@ -80,12 +93,12 @@ describe('Login Screen - Mobile', () => {
       expect(isKeyboardShown).toBe(false);
     });
 
-    it('should move focus from email to password when tapping next', async () => {
-      const emailInput = await loginScreen.emailInput;
-      await emailInput.click();
-      await emailInput.setValue(validUser.email);
+    it('should keep the keyboard up when moving focus from email to password', async () => {
+      // Type into email through the screen helper (reaches the shadow input),
+      // then tap the password field. The keyboard should stay up across the
+      // focus change rather than dismiss.
+      await loginScreen.enterCredentials(validUser.email, '');
 
-      // Tap the password field
       const passwordInput = await loginScreen.passwordInput;
       await passwordInput.click();
       await browser.pause(500);
@@ -147,7 +160,8 @@ describe('Login Screen - Mobile', () => {
       expect(await loginScreen.isLoginScreenDisplayed()).toBe(true);
     });
 
-    it('should successfully login in landscape orientation', async () => {
+    // Needs the mock API reachable from the emulator — see MOBILE.md (networking).
+    it.skip('should successfully login in landscape orientation', async () => {
       await driver.setOrientation('LANDSCAPE');
       await browser.pause(1000);
 
