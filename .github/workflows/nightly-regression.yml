@@ -247,6 +247,14 @@ jobs:
         run: npm ci
         working-directory: tests/e2e-mobile
 
+      # Appium 2 does not auto-register drivers that merely sit in node_modules;
+      # a UiAutomator2 session fails unless the driver is installed into
+      # APPIUM_HOME (~/.appium). This is a regular step, so working-directory is
+      # honoured and npx resolves the local appium binary.
+      - name: Install Appium UiAutomator2 driver
+        run: npx appium driver install uiautomator2
+        working-directory: tests/e2e-mobile
+
       - name: Build Ionic app
         run: npm run build
         working-directory: app
@@ -290,13 +298,22 @@ jobs:
           profile: ${{ matrix.device }}
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           disable-animations: true
+          # The android-emulator-runner runs each script line in its own shell,
+          # so a bare `cd` on one line does not carry to the next. The previous
+          # `cd …` then `npx wdio …` therefore ran npx at the repo root, where
+          # there is no local wdio binary — npx silently fetched the deprecated
+          # `wdio@6.0.1` scaffolder, which hung until the 60-minute timeout.
+          #
+          # Chaining cd with the runner on ONE line keeps them in the same
+          # shell, and `npm test` (rather than npx) resolves the local wdio
+          # binary from node_modules/.bin — no network fetch, fails fast if a
+          # dependency is missing.
           script: |
             adb wait-for-device
             adb shell settings put global window_animation_scale 0
             adb shell settings put global transition_animation_scale 0
             adb shell settings put global animator_duration_scale 0
-            cd tests/e2e-mobile
-            npx wdio run ./wdio.conf.ts
+            cd tests/e2e-mobile && npm test
 
       - name: Upload mobile artifacts
         if: always()
