@@ -18,6 +18,7 @@ api/dotnet-api/obj/
 # reports/ folder, so both are ignored rather than just the configured one.
 tests/reports/
 tests/allure-results/
+tests/performance/reports/
 test-results/
 playwright-report/
 
