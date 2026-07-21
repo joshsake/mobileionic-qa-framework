@@ -101,17 +101,23 @@ describe('Login Screen - Mobile', () => {
     });
 
     it('should keep the keyboard up when moving focus from email to password', async () => {
-      // Type into email through the screen helper (reaches the shadow input),
-      // then tap the password field. The keyboard should stay up across the
-      // focus change rather than dismiss.
-      await loginScreen.enterCredentials(validUser.email, '');
+      // Tap email to raise the keyboard, then tap password. Moving between two
+      // text fields should keep the keyboard up.
+      //
+      // This taps rather than typing via setValue: programmatic value injection
+      // into the webview does not raise the native soft keyboard, so the
+      // keyboard has to be brought up by an actual tap (as the "tap the email
+      // input" test above confirms it is).
+      const emailInput = await loginScreen.emailInput;
+      await emailInput.click();
+      await browser.pause(500);
+      expect(await driver.isKeyboardShown()).toBe(true);
 
       const passwordInput = await loginScreen.passwordInput;
       await passwordInput.click();
       await browser.pause(500);
 
-      const isKeyboardShown = await driver.isKeyboardShown();
-      expect(isKeyboardShown).toBe(true);
+      expect(await driver.isKeyboardShown()).toBe(true);
     });
   });
 
