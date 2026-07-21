@@ -62,6 +62,16 @@ export class LoginScreen extends BaseScreen {
     await this.typeIntoField(this.selectors.passwordInput, password);
   }
 
+  /** Focus the email field by tapping its inner input (raises the keyboard). */
+  async focusEmail(): Promise<void> {
+    await this.tapField(this.selectors.emailInput);
+  }
+
+  /** Focus the password field by tapping its inner input. */
+  async focusPassword(): Promise<void> {
+    await this.tapField(this.selectors.passwordInput);
+  }
+
   /**
    * Tap the login button to submit credentials.
    */

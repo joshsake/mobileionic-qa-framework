@@ -104,22 +104,24 @@ describe('Login Screen - Mobile', () => {
       // Tap email to raise the keyboard, then tap password. Moving between two
       // text fields should keep the keyboard up.
       //
-      // Taps rather than typing via setValue: programmatic value injection into
-      // the webview does not raise the native soft keyboard. And it waits for
-      // the keyboard rather than pausing a fixed time — the show animation can
-      // take longer than a fixed pause, which is what made this flake.
-      const emailInput = await loginScreen.emailInput;
-      await emailInput.click();
+      // Focus each field via its inner input, not the ion-input host: tapping
+      // the host does not reliably move focus into the shadow-DOM <input>, so
+      // the keyboard drops when moving between fields. And wait for the keyboard
+      // rather than pausing a fixed time — the show animation can outlast a
+      // fixed pause.
+      await loginScreen.focusEmail();
       await driver.waitUntil(async () => driver.isKeyboardShown(), {
         timeout: 5000,
-        timeoutMsg: 'keyboard did not appear after tapping the email field',
+        timeoutMsg: 'keyboard did not appear after focusing the email field',
       });
 
-      const passwordInput = await loginScreen.passwordInput;
-      await passwordInput.click();
-      await browser.pause(500);
+      await loginScreen.focusPassword();
 
       // Moving to another text field should not dismiss the keyboard.
+      await driver.waitUntil(async () => driver.isKeyboardShown(), {
+        timeout: 3000,
+        timeoutMsg: 'keyboard dismissed when moving focus to the password field',
+      });
       expect(await driver.isKeyboardShown()).toBe(true);
     });
   });

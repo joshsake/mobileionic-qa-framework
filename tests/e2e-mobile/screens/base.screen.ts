@@ -149,6 +149,18 @@ export class BaseScreen {
   }
 
   /**
+   * Focus a field by tapping its inner native control.
+   *
+   * Tapping the ion-input host does not reliably move focus to the <input>
+   * inside its shadow root, so the soft keyboard can drop when moving between
+   * fields. Clicking the inner control directly focuses it.
+   */
+  async tapField(testId: string): Promise<void> {
+    const control = await this.editableControl(testId);
+    await control.click();
+  }
+
+  /**
    * Get the text content of an element by its data-testid.
    */
   async getTextById(testId: string): Promise<string> {
