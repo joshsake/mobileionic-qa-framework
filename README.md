@@ -130,11 +130,10 @@ docker-compose up -d
 - Navigation: tabs, deep links, back button
 - Responsive: mobile/tablet viewports, orientation
 
-### Mobile E2E (~38 tests)
-- Login: credentials, keyboard handling, biometric stubs, orientation
-- Workouts: add, swipe-to-delete, pull-to-refresh, offline
-- Gestures: swipe, pinch zoom, long press, drag-to-reorder
-- Device: orientation, back button, backgrounding, notifications
+### Mobile E2E (Appium/WebdriverIO on Android)
+- Login: **proven green on API 33 + 34** — 7 passing, 5 skipped (documented)
+- Workouts / Add-workout / Gestures / Device features: being migrated to the
+  webview approach screen by screen (see [MOBILE.md](tests/e2e-mobile/MOBILE.md))
 
 ### API (40 passing, 1 skipped)
 - Auth: login/register, token handling
@@ -152,15 +151,17 @@ docker-compose up -d
 **qa-pipeline.yml** — runs on every push/PR:
 1. Lint + type check
 2. API tests
-3. Web E2E (Chrome/Firefox/Mobile Chrome matrix)
-4. Mobile E2E (Android emulator)
-5. Allure report → GitHub Pages
+3. Web E2E (Chromium / Firefox / Mobile Chrome matrix)
+4. Allure report → GitHub Pages
+
+(Mobile E2E is intentionally not in the PR pipeline — see the mobile status
+below.)
 
 **nightly-regression.yml** — runs at 2am UTC:
-- Full browser matrix (5 browsers)
-- Android device matrix (Pixel 6/7/8)
-- Performance tests
-- Slack notification on failure
+- Full browser matrix (5 browsers: Chromium, Firefox, WebKit, Mobile Chrome, Mobile Safari)
+- Performance tests (k6 load + spike)
+- Mobile E2E on the Android emulator matrix (opt-in via `-f run_mobile=true`)
+- Slack notification on failure (when `SLACK_WEBHOOK_URL` is set)
 
 ## Documentation
 
@@ -179,37 +180,42 @@ they are.
 | API + contract tests | Green in CI |
 | Web E2E (Chromium, Firefox, Mobile Chrome) | Green in CI |
 | Allure report generation | Green in CI |
-| Mobile E2E (Appium/Android) | **Known broken — excluded from CI, manual trigger only** |
-| k6 performance | Runs nightly; verified by desk-check and simulation, not yet by a real k6 run |
+| Mobile E2E — login (Appium/Android) | **Green on Android API 33 + 34** (opt-in nightly job) |
+| Mobile E2E — other screens | Pending — being rewritten screen by screen, see [MOBILE.md](tests/e2e-mobile/MOBILE.md) |
+| k6 performance | Green in CI (nightly) |
 
-**Mobile E2E cannot pass as written, and this is a selector-strategy bug rather
-than an environment problem.** The build half works: CI adds the Capacitor
-Android platform, Gradle produces a debug APK, and with KVM enabled the
-emulator boots and Appium attaches. The specs then fail, because the screen
-objects locate elements with the accessibility-id strategy:
+**Mobile E2E: the login screen is proven end-to-end on real emulators.** The
+suite originally located elements with the accessibility-id strategy
+(`$(`~login-email-input`)`), but `data-testid` is a DOM attribute inside the
+Capacitor WebView, not an Android accessibility id — so in the `NATIVE_APP`
+context nothing resolved and every spec timed out. `login.spec.ts` was rewritten
+to the correct hybrid approach and now passes on both Android API 33 and 34:
 
-```ts
-return $(`~${this.selectors.emailInput}`);   // ~login-email-input
-```
+- switch into the `WEBVIEW_*` context after launch (and re-select it after an
+  app relaunch — terminating the app tears down the renderer the driver is
+  attached to);
+- CSS `[data-testid]` selectors against the DOM;
+- type into `ion-input`'s **shadow-DOM** `<input>` (Chromedriver CSS does not
+  pierce shadow DOM the way Playwright does);
+- read `ion-button`'s reflected `disabled` attribute (`isEnabled()` always
+  reports true for a custom element).
 
-`data-testid` is a DOM attribute inside the Capacitor WebView, not an Android
-accessibility id, and nothing in the suite switches out of the `NATIVE_APP`
-context. UiAutomator2 therefore never resolves those selectors and every spec
-waits out its full 60s timeout.
+Seven login tests pass reliably; five are skipped with documented reasons —
+three that need the mock API reachable from inside the emulator (next
+iteration), and two soft-keyboard-visibility checks that a headless emulator
+does not report reliably (they passed on API 34 but failed every retry on API
+33). The other screens (`workouts`, `add-workout`, `gestures`,
+`device-features`) still carry the old selector mismatches and are being brought
+online the same way. Full detail and rationale in
+[tests/e2e-mobile/MOBILE.md](tests/e2e-mobile/MOBILE.md).
 
-Fixing it means switching to the `WEBVIEW_com.qaframework.fitnesstracker`
-context after launch and using CSS selectors (`[data-testid="..."]`) — a
-contained change to `base.screen.ts` and the per-screen selector strategy.
-
-Until then the job is excluded from the PR pipeline and gated behind the
-nightly workflow's manual trigger. That is not cosmetic: each run burned 45
-minutes to reach a guaranteed failure, and because a timed-out job is
-*cancelled* rather than failed, `continue-on-error` did not stop it from taking
-the whole run's conclusion down with it.
+The mobile job is opt-in (excluded from the PR pipeline; off by default on the
+nightly) because the not-yet-migrated screens can't pass and a timed-out
+emulator job is *cancelled* rather than failed, which would drag a run's
+conclusion down. Run the proven login suite deliberately with:
 
 ```bash
-# Run it deliberately once the context switching is implemented
-gh workflow run "Nightly Regression"
+gh workflow run "Nightly Regression" -f run_mobile=true
 ```
 
 **Two known defects are documented rather than papered over:**
