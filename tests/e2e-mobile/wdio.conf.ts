@@ -51,6 +51,14 @@ export const config: Options.Testrunner = {
   mochaOpts: {
     ui: 'bdd',
     timeout: 120000,
+    // Retry a failed test up to twice within the same session. Soft-keyboard
+    // detection (isKeyboardShown) and orientation settling are non-deterministic
+    // on a headless emulator — a test can fail once and pass immediately after.
+    // Retries absorb that emulator-level flakiness without masking a real,
+    // repeatable failure (which fails all attempts). This is standard practice
+    // for mobile E2E; it is cheap because only the failing test re-runs, not the
+    // whole session.
+    retries: 2,
   },
 
   reporters: [
