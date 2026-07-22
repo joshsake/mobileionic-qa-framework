@@ -3,6 +3,8 @@
 [![QA Pipeline](https://github.com/joshsake/mobileionic-qa-framework/actions/workflows/qa-pipeline.yml/badge.svg)](https://github.com/joshsake/mobileionic-qa-framework/actions/workflows/qa-pipeline.yml)
 [![Nightly Regression](https://github.com/joshsake/mobileionic-qa-framework/actions/workflows/nightly-regression.yml/badge.svg)](https://github.com/joshsake/mobileionic-qa-framework/actions/workflows/nightly-regression.yml)
 
+📊 **[Live test report](https://joshsake.github.io/mobileionic-qa-framework/qa-report/)** — Allure output from the latest run on `main`, published automatically by the pipeline.
+
 End-to-end QA ownership across a hybrid mobile app, its APIs, and CI — built to
 be run, not just read.
 
