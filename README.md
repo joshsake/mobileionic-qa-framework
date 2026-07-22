@@ -1,6 +1,31 @@
 # Mobile QA Automation Framework
 
-A demo-ready mobile testing prototype showcasing end-to-end QA ownership across mobile apps, APIs, and cloud-native systems.
+[![QA Pipeline](https://github.com/joshsake/mobileionic-qa-framework/actions/workflows/qa-pipeline.yml/badge.svg)](https://github.com/joshsake/mobileionic-qa-framework/actions/workflows/qa-pipeline.yml)
+[![Nightly Regression](https://github.com/joshsake/mobileionic-qa-framework/actions/workflows/nightly-regression.yml/badge.svg)](https://github.com/joshsake/mobileionic-qa-framework/actions/workflows/nightly-regression.yml)
+
+End-to-end QA ownership across a hybrid mobile app, its APIs, and CI — built to
+be run, not just read.
+
+**What is actually verified, in CI, right now:**
+
+| | |
+|---|---|
+| **Web E2E** | 36 passing across 5 engines — Chromium, Firefox, WebKit, Mobile Chrome, Mobile Safari |
+| **API + contract** | 40 passing — CRUD, auth, JSON-schema contract enforcement (ajv) |
+| **Mobile E2E** | Appium/Capacitor login suite green on **Android API 33 and 34**, on real emulators |
+| **Performance** | k6 load / stress / spike, thresholds enforced |
+| **Quality gates** | ESLint + TypeScript strict, run before anything else |
+
+Two real defects found by this suite are [documented, not hidden](#current-status--known-gaps),
+and the tests that cover them are committed as skipped specs so they start
+enforcing the moment the defects are fixed.
+
+The hybrid-mobile work is the deep end: Capacitor renders the UI in a WebView,
+so `data-testid` is a DOM attribute the native automation driver cannot see.
+Getting that suite green meant WEBVIEW context switching (and recovering it
+after an app relaunch tears the renderer down), CSS selectors against the DOM,
+and typing into Ionic's shadow-DOM inputs. Written up in
+[tests/e2e-mobile/MOBILE.md](tests/e2e-mobile/MOBILE.md).
 
 ## Architecture
 

@@ -25,10 +25,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -66,10 +66,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -113,7 +113,7 @@ jobs:
 
       - name: Upload Allure results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: allure-results-api
           path: tests/reports/allure-results/
@@ -136,10 +136,10 @@ jobs:
             project: web-mobile-chrome
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -204,7 +204,7 @@ jobs:
 
       - name: Upload screenshots on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-screenshots-${{ matrix.browser }}
           path: tests/test-results/
@@ -213,7 +213,7 @@ jobs:
 
       - name: Upload Allure results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: allure-results-web-${{ matrix.browser }}
           path: tests/reports/allure-results/
@@ -222,17 +222,15 @@ jobs:
 
   # The Appium suite is deliberately NOT part of this pipeline.
   #
-  # Its screen objects locate elements with the accessibility-id strategy
-  # (`~login-email-input`), but data-testid is a DOM attribute inside the
-  # Capacitor WebView, not an Android accessibility id. Nothing in the suite
-  # switches to the WEBVIEW context, so UiAutomator2 can never resolve those
-  # selectors and every spec waits out its full timeout before failing.
+  # It works — login.spec.ts passes on Android API 33 and 34 — but it needs a
+  # booted emulator, which adds ~10 minutes to a run that otherwise finishes in
+  # a couple. Keeping it out preserves fast PR feedback.
   #
-  # Running it anyway cost 45 minutes per build and, because a timeout cancels
-  # the job rather than failing it, continue-on-error did not stop that from
-  # taking the whole run's conclusion down with it. It is exercised on demand
-  # via the nightly workflow's manual trigger until the context switching is
-  # implemented — see the mobile section of the README.
+  # It is also a job whose timeout *cancels* rather than fails, which would drag
+  # a run's conclusion down regardless of continue-on-error. Run it on demand via
+  # the nightly workflow:
+  #   gh workflow run "Nightly Regression" -f run_mobile=true
+  # See tests/e2e-mobile/MOBILE.md for scope and rationale.
 
   generate-report:
     name: Generate Combined Report
@@ -248,17 +246,17 @@ jobs:
       id-token: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download all Allure results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: allure-results-*
           path: allure-results
           merge-multiple: true
 
       - name: Setup Java for Allure
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -277,7 +275,7 @@ jobs:
           allure generate allure-results --clean -o allure-report
 
       - name: Upload combined report artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: allure-report
           path: allure-report/
@@ -286,7 +284,7 @@ jobs:
 
       - name: Deploy report to GitHub Pages
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: peaceiris/actions-gh-pages@v3
+        uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./allure-report
