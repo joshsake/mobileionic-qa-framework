@@ -59,7 +59,11 @@ export default defineConfig({
   reporter: [
     ['list'],
     ['html', { outputFolder: 'reports/html-report', open: 'never' }],
-    ['allure-playwright', { outputFolder: 'reports/allure-results' }],
+    // The option is `resultsDir`. allure-playwright v3 silently ignores an
+    // unknown key and falls back to ./allure-results, which is what happened
+    // with the previous `outputFolder`: results landed outside the directory CI
+    // uploads from, so every run published an empty report.
+    ['allure-playwright', { resultsDir: 'reports/allure-results' }],
   ],
 
   /* Shared settings across all projects */
