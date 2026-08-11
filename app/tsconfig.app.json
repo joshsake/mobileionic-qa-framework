@@ -5,5 +5,9 @@
     "types": []
   },
   "files": ["src/main.ts"],
-  "include": ["src/**/*.d.ts", "src/**/*.ts"]
+  "include": ["src/**/*.d.ts", "src/**/*.ts"],
+  // Specs are compiled by tsconfig.spec.json, which supplies the jasmine
+  // types. Without this exclusion the application build config sweeps them in
+  // with `types: []` and every describe/it/expect is an unresolved name.
+  "exclude": ["src/**/*.spec.ts"]
 }

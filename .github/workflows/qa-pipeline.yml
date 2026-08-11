@@ -56,6 +56,13 @@ jobs:
         run: npx tsc --noEmit -p tsconfig.app.json
         working-directory: app
 
+      # tsconfig.app.json excludes the specs (it builds the application and has
+      # types: []), so without this step the unit tests would be the only
+      # TypeScript in the repo that never gets type checked outside a test run.
+      - name: TypeScript type check (app specs)
+        run: npx tsc --noEmit -p tsconfig.spec.json
+        working-directory: app
+
       - name: TypeScript type check (tests)
         run: npx tsc --noEmit --project tsconfig.json
         working-directory: tests
