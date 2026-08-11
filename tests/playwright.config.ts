@@ -111,6 +111,27 @@ export default defineConfig({
       },
     })),
 
+    /* ── Accessibility ────────────────────────────────────────────────────
+     * axe evaluates DOM semantics, which do not differ between Chromium,
+     * Firefox and WebKit — running these across the full browser matrix would
+     * cost four extra runs to learn nothing. Layout *does* differ by viewport,
+     * and Ionic renders different chrome on small screens, so this runs once on
+     * desktop and once on mobile.
+     */
+    ...(
+      [
+        ['a11y', devices['Desktop Chrome']],
+        ['a11y-mobile', devices['Pixel 5']],
+      ] as const
+    ).map(([name, device]) => ({
+      name,
+      testDir: './a11y/specs',
+      use: {
+        baseURL: WEB_BASE_URL,
+        ...device,
+      },
+    })),
+
     /* ── API Tests ────────────────────────────────────────────────────── */
     {
       name: 'api',

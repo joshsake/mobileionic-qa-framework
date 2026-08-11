@@ -10,14 +10,21 @@ The framework follows a layered test pyramid to balance speed, cost, and confide
 
 ### Layer 1: Unit Tests (Base)
 - **Scope**: Individual functions, services, and components in isolation.
-- **Tools**: Jasmine/Karma (Angular), xUnit (.NET API).
-- **Ownership**: Development team.
-- **Execution**: On every commit, pre-push hook.
-- **Target coverage**: 80% line coverage for business logic, 60% for UI components.
+- **Tools**: Jasmine/Karma with Angular TestBed. **Built and enforced** — 94
+  specs over the services, the page logic and the route table.
+- **Execution**: On every pull request (`unit-tests` job in `qa-pipeline.yml`).
+- **Target coverage**: 80% lines / 80% statements / 70% branches, checked by
+  `karma.conf.js` rather than merely reported. Currently ~98% lines, 100%
+  branches.
+- **Not built**: xUnit for the .NET API. `api/dotnet-api` has no test project,
+  so the controllers are covered only indirectly, through the API layer below.
+  This is the largest remaining gap in the pyramid.
 
 ### Layer 2: Integration Tests
 - **Scope**: Interactions between services, database queries, middleware pipelines.
-- **Tools**: xUnit with in-memory database (Entity Framework), Angular TestBed for service integration.
+- **Tools**: Angular TestBed with `HttpTestingController` for the client's
+  request/response contract (built). xUnit with an in-memory EF Core database
+  for the API side — **not built**, see above.
 - **Execution**: On every pull request.
 - **Target coverage**: All controller endpoints, all service-to-repository paths.
 
@@ -85,8 +92,10 @@ The framework follows a layered test pyramid to balance speed, cost, and confide
 
 | Layer | Metric | Target | Measurement |
 |-------|--------|--------|-------------|
-| Unit | Line coverage | 80% | Karma/xUnit coverage reports |
+| Unit (Angular) | Line coverage | 80% | Karma coverage check — enforced, currently ~98% |
+| Unit (.NET) | Line coverage | 80% | Not built — no test project exists yet |
 | Integration | Endpoint coverage | 100% of controllers | Manual tracking |
+| Accessibility | No undocumented WCAG 2.1 A/AA violations | 0 new | axe-core, against a documented baseline |
 | API | Endpoint + status code coverage | 100% | Playwright report |
 | E2E Web | Critical user flow coverage | 100% of P1 flows | Test case mapping |
 | E2E Mobile | Critical flow + gesture coverage | 100% of P1 flows, 80% of P2 | Test case mapping |
@@ -112,7 +121,8 @@ A release candidate must pass all of the following gates:
 
 | Gate | Criteria | Blocking? |
 |------|----------|-----------|
-| Unit tests | 100% pass, coverage >= 80% | Yes |
+| Unit tests (Angular) | 100% pass, coverage >= 80% | Yes |
+| Accessibility | No WCAG 2.1 A/AA violation outside the documented baseline | Yes |
 | API tests | 100% pass | Yes |
 | E2E web (Chromium) | 100% pass | Yes |
 | E2E web (Firefox, WebKit) | >= 95% pass | Yes |
@@ -148,8 +158,21 @@ A release candidate must pass all of the following gates:
 - Orientation change during mid-flow (e.g., during login) is specifically tested.
 
 ### Accessibility
-- Accessibility IDs are used as primary selectors in mobile tests, ensuring the app maintains accessibility attributes.
-- Future: integrate axe-core or Accessibility Scanner for automated a11y audits.
+- axe-core runs over every route on each pull request (`a11y` and `a11y-mobile`
+  Playwright projects), checking WCAG 2.1 A and AA.
+- The gate is "no violation outside the documented baseline" rather than "no
+  violations". The app has three recorded defects — disabled pinch-zoom,
+  unlabelled icon-only buttons, and unlabelled icons — listed with their impact
+  and fix in `tests/a11y/known-violations.ts`. Failing outright on those would
+  make the gate permanently red and therefore ignored; asserting nothing would
+  let the fourth defect through.
+- A companion spec fails if a baselined violation stops reproducing, so the
+  list cannot decay into a permanent set of unenforced rules.
+- The correct behaviour for each known defect is committed as a skipped spec,
+  ready to enforce the moment the app is fixed.
+- Note the mobile suite does **not** rely on accessibility IDs as selectors —
+  `data-testid` is a DOM attribute inside the Capacitor WebView, so the specs
+  locate by CSS instead. See `tests/e2e-mobile/MOBILE.md`.
 
 ## 9. Risk-Based Testing Approach
 

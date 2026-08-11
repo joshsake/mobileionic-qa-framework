@@ -128,6 +128,24 @@ describe('Workouts Screen - Mobile', () => {
     await relaunchToWorkouts();
   });
 
+  /**
+   * Leave the mock as this suite found it.
+   *
+   * beforeEach alone is not enough: it protects this suite from its own writes,
+   * but the records created by the *last* test survive the run. Those are
+   * written through the app's form, which sends a date-only `date` — so they
+   * make the API contract suite fail against a shared local server, in a way
+   * that looks like a defect in the contract tests rather than leftover state.
+   * (The underlying format mismatch is real and is tracked as defect #7; this
+   * hook is about not making an unrelated suite pay for it.)
+   *
+   * CI gets a fresh mock per job, so this matters only locally — which is
+   * exactly where it is most confusing.
+   */
+  after(async () => {
+    await resetMockData();
+  });
+
   describe('Workout List', () => {
     it('should render the workouts returned by the API', async () => {
       const count = await workoutsScreen.getVisibleWorkoutCount();

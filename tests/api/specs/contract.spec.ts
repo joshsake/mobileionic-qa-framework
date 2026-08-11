@@ -198,6 +198,51 @@ test.describe('Workout Response Contract', () => {
     expect(validate(owned)).toBe(true);
   });
 
+  /*
+   * Defect #7 — the app writes a date the contract rejects.
+   *
+   * add-workout.page.ts binds an <ion-input type="date">, which yields
+   * "YYYY-MM-DD". The API stores that verbatim, so GET /api/workouts then
+   * returns a record whose `date` violates the schema's `format: 'date-time'`.
+   *
+   * Nothing in this repo caught it because no fixture uses the format the real
+   * app produces: createOwnedWorkout() above sends new Date().toISOString(),
+   * and every seeded workout in db.json is a full ISO timestamp. The contract
+   * suite was validating a shape the application never generates. It surfaced
+   * only once the mobile suite began creating workouts through the UI against
+   * the same server.
+   *
+   * Skipped with the correct expectation recorded. The fix is a decision, not a
+   * typo — either the app sends a full timestamp, or the schema accepts a
+   * date-only string — so this is left failing-by-omission rather than being
+   * quietly relaxed to match the bug.
+   */
+  test.skip('should return a schema-valid date for a workout created the way the app creates it', async () => {
+    // GIVEN an authenticated user
+    await client.login('test@example.com', 'password123');
+
+    // WHEN a workout is created with a date-only string, exactly as the
+    // add-workout form sends it
+    const response = await client.createWorkout({
+      exerciseType: 'Running',
+      durationMinutes: 45,
+      notes: 'Created the way the UI creates it',
+      date: '2026-08-11',
+    });
+    expect(response.status()).toBe(201);
+    const workout = await response.json();
+    createdWorkoutIds.push(workout.id);
+
+    // THEN the stored record should still satisfy the documented contract
+    const validate = ajv.compile(workoutSchema);
+    const isValid = validate(workout);
+
+    if (!isValid) {
+      console.error('Workout schema errors:', validate.errors);
+    }
+    expect(isValid).toBe(true);
+  });
+
   test('should persist exerciseType from the allowed enum values', async () => {
     // GIVEN authenticated user
     await client.login('test@example.com', 'password123');
