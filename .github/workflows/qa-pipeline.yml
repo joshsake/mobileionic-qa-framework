@@ -120,6 +120,46 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
+  unit-tests:
+    name: Unit Tests (Angular)
+    needs: lint-and-typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install app dependencies
+        run: npm ci
+        working-directory: app
+
+      # Karma needs a real Chrome. ubuntu-latest ships one, but karma-chrome-launcher
+      # only finds it via CHROME_BIN, and the ChromeHeadlessCI launcher in
+      # karma.conf.js adds the --no-sandbox flag the runner's container requires.
+      - name: Run unit tests with coverage
+        run: npm run test:ci
+        working-directory: app
+        env:
+          CHROME_BIN: /usr/bin/google-chrome
+
+      # The coverage thresholds in karma.conf.js already fail the run above if
+      # they are not met; this publishes the report so a drop is diagnosable
+      # rather than just a red X.
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-coverage
+          path: app/coverage/
+          retention-days: 14
+          if-no-files-found: ignore
+
   e2e-web-tests:
     name: E2E Web Tests (${{ matrix.browser }})
     needs: lint-and-typecheck
@@ -220,21 +260,109 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
+  accessibility-tests:
+    name: Accessibility (axe-core)
+    needs: lint-and-typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: |
+            app/package-lock.json
+            api/mock-server/package-lock.json
+            tests/package-lock.json
+
+      - name: Install app dependencies
+        run: npm ci
+        working-directory: app
+
+      - name: Install mock server dependencies
+        run: npm ci
+        working-directory: api/mock-server
+
+      - name: Install test dependencies
+        run: npm ci
+        working-directory: tests
+
+      # Chromium only: axe evaluates DOM semantics, which are identical across
+      # engines. The two a11y projects differ by viewport, not by browser.
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+        working-directory: tests
+
+      - name: Start mock server
+        run: npm start &
+        working-directory: api/mock-server
+        env:
+          PORT: ${{ env.MOCK_SERVER_PORT }}
+
+      - name: Build Ionic app
+        run: npm run build
+        working-directory: app
+
+      - name: Serve built app
+        run: npx --yes serve -s dist/fitness-tracker/browser -l 4200 &
+        working-directory: app
+
+      - name: Wait for services
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf "$API_BASE_URL/api/health" > /dev/null \
+               && curl -sf http://localhost:4200 > /dev/null; then
+              echo "App and mock server ready after ${i} attempt(s)."
+              exit 0
+            fi
+            echo "Waiting for services... ($i/30)"
+            sleep 2
+          done
+          echo "Services did not become ready in 60s."
+          exit 1
+
+      - name: Run accessibility tests
+        run: npx playwright test --project=a11y --project=a11y-mobile
+        working-directory: tests
+        env:
+          BASE_URL: http://localhost:4200
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: a11y-failures
+          path: tests/test-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Upload Allure results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: allure-results-a11y
+          path: tests/reports/allure-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
   # The Appium suite is deliberately NOT part of this pipeline.
   #
-  # It works — login.spec.ts passes on Android API 33 and 34 — but it needs a
+  # It works — login and workouts pass on Android API 33 and 34 — but it needs a
   # booted emulator, which adds ~10 minutes to a run that otherwise finishes in
   # a couple. Keeping it out preserves fast PR feedback.
   #
   # It is also a job whose timeout *cancels* rather than fails, which would drag
-  # a run's conclusion down regardless of continue-on-error. Run it on demand via
-  # the nightly workflow:
-  #   gh workflow run "Nightly Regression" -f run_mobile=true
+  # a run's conclusion down regardless of continue-on-error. It runs on the
+  # nightly schedule instead; skip it on a manual run with:
+  #   gh workflow run "Nightly Regression" -f run_mobile=false
   # See tests/e2e-mobile/MOBILE.md for scope and rationale.
 
   generate-report:
     name: Generate Combined Report
-    needs: [api-tests, e2e-web-tests]
+    needs: [api-tests, e2e-web-tests, unit-tests, accessibility-tests]
     if: always()
     runs-on: ubuntu-latest
     permissions:

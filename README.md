@@ -12,15 +12,18 @@ be run, not just read.
 
 | | |
 |---|---|
+| **Unit** | 94 passing — services, page logic and the lazy route table, at ~98% line and 100% branch coverage, enforced |
 | **Web E2E** | 36 passing across 5 engines — Chromium, Firefox, WebKit, Mobile Chrome, Mobile Safari |
 | **API + contract** | 40 passing — CRUD, auth, JSON-schema contract enforcement (ajv) |
+| **Accessibility** | axe-core over every route, WCAG 2.1 A/AA, gated against a documented baseline |
 | **Mobile E2E** | 23 passing on real Android emulators — login and workouts, driving the Capacitor WebView against a live API |
 | **Performance** | k6 load / stress / spike, thresholds enforced |
 | **Quality gates** | ESLint + TypeScript strict, run before anything else |
 
-Three real defects found by this suite are [documented, not hidden](#current-status--known-gaps),
+Seven real defects found by this suite are [documented, not hidden](#current-status--known-gaps),
 and the tests that cover them are committed as skipped specs so they start
-enforcing the moment the defects are fixed.
+enforcing the moment the defects are fixed. The most interesting one sat in the
+gap *between* layers that were each individually green — see defect #7.
 
 The hybrid-mobile work is the deep end: Capacitor renders the UI in a WebView,
 so `data-testid` is a DOM attribute the native automation driver cannot see.
@@ -37,7 +40,8 @@ up in [tests/e2e-mobile/MOBILE.md](tests/e2e-mobile/MOBILE.md).
 mobileionic-qa-framework/
 ├── app/                          # Ionic 8 / Capacitor fitness tracker app
 │   ├── src/app/pages/            # Login, Dashboard, Workouts, History, Profile
-│   └── src/app/services/         # API + Auth services
+│   ├── src/app/services/         # API + Auth services
+│   └── src/**/*.spec.ts          # Jasmine/Karma unit tests (co-located)
 ├── api/
 │   ├── dotnet-api/               # C# .NET 8 Web API (EF Core + SQL Server)
 │   │   └── Controllers/          # Auth, Workouts, Users, Analytics
@@ -55,6 +59,9 @@ mobileionic-qa-framework/
 │   │   ├── specs/                # Auth, CRUD, analytics, schema validation
 │   │   ├── schemas/              # JSON schemas (ajv)
 │   │   └── helpers/              # Typed API client
+│   ├── a11y/                     # axe-core accessibility tests
+│   │   ├── specs/                # Per-route WCAG 2.1 A/AA audits
+│   │   └── known-violations.ts   # Documented baseline, with impact + fix
 │   └── performance/              # k6 load, stress, and spike tests
 ├── .github/workflows/            # CI/CD pipelines
 │   ├── qa-pipeline.yml           # PR/push: lint → API → web → mobile → report
@@ -99,6 +106,13 @@ ionic serve
 
 ### 3. Run Tests
 
+Unit tests need neither the app nor the mock server running — they are the only
+layer that does not:
+
+```bash
+cd app && npm run test:ci
+```
+
 ```bash
 cd tests
 npm install
@@ -108,6 +122,9 @@ npx playwright test --project=api
 
 # Web E2E tests (mock server + app must be running)
 npx playwright test --project=web
+
+# Accessibility (mock server + app must be running)
+npx playwright test --project=a11y --project=a11y-mobile
 
 # Same gates CI runs
 npm run lint
@@ -167,6 +184,22 @@ docker-compose up -d
 
 ## Test Suites Overview
 
+### Unit (94 passing)
+- Services: `AuthService` token lifecycle, `ApiService` URLs, payloads and the
+  bearer-header path, driven through `HttpTestingController`
+- Page logic: streak and weekly aggregation, workout search, date-range
+  filtering, form validation guards, and every error-fallback branch — including
+  the ones the running mock can never produce, so no E2E test can reach them
+- Routes: every lazy `loadComponent` is resolved, catching a broken import that
+  would otherwise only fail when a user navigates there
+
+### Accessibility (axe-core, WCAG 2.1 A/AA)
+- Every route, on desktop and mobile viewports
+- Asserts no violation outside a documented baseline, plus a spec that fails if
+  a baselined violation stops reproducing, so the list cannot rot
+- Three real defects recorded with impact and fix in
+  [tests/a11y/known-violations.ts](tests/a11y/known-violations.ts)
+
 ### Web E2E (36 passing, 1 skipped)
 - Login: valid/invalid credentials, field validation, logout
 - Workouts: list, create, edit, search/filter
@@ -181,7 +214,7 @@ docker-compose up -d
 - Gestures / Device features: being migrated to the webview approach screen by
   screen (see [MOBILE.md](tests/e2e-mobile/MOBILE.md))
 
-### API (40 passing, 1 skipped)
+### API (40 passing, 2 skipped)
 - Auth: login/register, token handling
 - Workouts: full CRUD lifecycle, userId/date filtering, ordering
 - Analytics: summary accuracy, weekly breakdown
@@ -196,9 +229,11 @@ docker-compose up -d
 
 **qa-pipeline.yml** — runs on every push/PR:
 1. Lint + type check
-2. API tests
-3. Web E2E (Chromium / Firefox / Mobile Chrome matrix)
-4. Allure report → GitHub Pages
+2. Unit tests (Angular), with the coverage threshold enforced
+3. API tests
+4. Web E2E (Chromium / Firefox / Mobile Chrome matrix)
+5. Accessibility (axe-core, desktop + mobile viewport)
+6. Allure report → GitHub Pages
 
 (Mobile E2E is intentionally not in the PR pipeline — see the mobile status
 below.)
@@ -224,6 +259,9 @@ they are.
 | Layer | Status |
 |---|---|
 | Lint + type check | Green in CI |
+| Unit (Angular) | Green in CI, 80% coverage gate enforced |
+| Unit (.NET API) | **Not built** — `api/dotnet-api` has no test project |
+| Accessibility (axe-core) | Green in CI against a documented baseline |
 | API + contract tests | Green in CI |
 | Web E2E (Chromium, Firefox, Mobile Chrome) | Green in CI |
 | Allure report generation | Green in CI |
@@ -306,6 +344,40 @@ gh workflow run "Nightly Regression" -f run_mobile=false
    stops at the redirect to `/workouts` and never inspects the list, so it has
    the same blind spot the mobile suite had before the assertions were split.
    Checking it there is the obvious next step.
+4. **Pinch-zoom is disabled app-wide.** `app/src/index.html` carries the Ionic
+   starter's `maximum-scale=1.0, user-scalable=no`, which fails WCAG 2.1 SC
+   1.4.4 on every route and blocks anyone who relies on zoom. Highest-impact of
+   the three accessibility findings, and the smallest fix.
+5. **Icon-only buttons have no accessible name.** The logout button and the
+   add-workout FAB are a bare `<ion-icon>` inside a button, so a screen reader
+   announces only "button". The FAB is the only way to add a workout, which
+   makes the primary action unusable non-visually.
+6. **Icons are exposed to assistive tech without alternative text.** Ionic
+   renders `<ion-icon>` with `role="img"` and adds no label; the decorative ones
+   need `aria-hidden="true"`.
+
+   Defects 4-6 were found by the axe-core pass. Each is recorded with its impact
+   and fix in [tests/a11y/known-violations.ts](tests/a11y/known-violations.ts),
+   with the correct behaviour committed as a skipped spec.
+7. **The app writes a date its own API contract rejects.** The add-workout form
+   binds `<ion-input type="date">`, which yields `YYYY-MM-DD`. The API stores it
+   verbatim, so `GET /api/workouts` then returns a record whose `date` violates
+   the workout schema's `format: 'date-time'`.
+
+   This one is worth dwelling on, because the reason it survived this long is
+   the interesting part: **no fixture in the repo used the format the real app
+   produces.** The contract suite builds its own workouts with
+   `new Date().toISOString()` and every seeded record in `db.json` is a full ISO
+   timestamp, so the schema was being validated against a shape the application
+   never generates. The E2E suites drive the real form but never check the
+   response body. Each layer was individually green and the gap sat between
+   them — it only surfaced once the mobile suite started creating workouts
+   through the UI against a server the contract tests also ran against.
+
+   Recorded as a skipped spec in `tests/api/specs/contract.spec.ts`. The fix is
+   a decision rather than a typo — either the app sends a full timestamp, or the
+   schema accepts a date-only string — so the expectation is left asserting the
+   contract as written rather than being relaxed to match the bug.
 
 ## Key Framework Design Decisions
 
