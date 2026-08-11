@@ -2,16 +2,22 @@ import { BaseScreen } from './base.screen';
 
 /**
  * WorkoutsScreen encapsulates interactions with the workouts list page.
- * Maps to data-testid attributes in workouts.page.ts.
+ * Maps to data-testid attributes in app/src/app/pages/workouts/workouts.page.ts.
+ *
+ * Every locator here is a CSS `[data-testid]` selector resolved in the WEBVIEW
+ * context. The previous version mixed those with `~accessibility-id` lookups
+ * (`$(`~workout-list`)`), which can never resolve: data-testid is a DOM
+ * attribute and the accessibility-id strategy reads the native view tree. See
+ * MOBILE.md.
  */
 export class WorkoutsScreen extends BaseScreen {
   private selectors = {
     workoutsTitle: 'workouts-title',
     backButton: 'workouts-back-btn',
     workoutList: 'workout-list',
+    searchBar: 'workout-search',
     addWorkoutFab: 'add-workout-fab',
     emptyState: 'workout-empty-state',
-    offlineIndicator: 'offline-indicator',
   };
 
   /**
@@ -25,21 +31,21 @@ export class WorkoutsScreen extends BaseScreen {
    * Get the workout list container element.
    */
   get workoutList() {
-    return $(`~${this.selectors.workoutList}`);
+    return $(this.sel(this.selectors.workoutList));
   }
 
   /**
    * Get the floating action button for adding a workout.
    */
   get addButton() {
-    return $(`~${this.selectors.addWorkoutFab}`);
+    return $(this.sel(this.selectors.addWorkoutFab));
   }
 
   /**
    * Get a specific workout item by its zero-based index.
    */
   workoutItem(index: number) {
-    return $(`~workout-list-item-${index}`);
+    return $(this.sel(`workout-list-item-${index}`));
   }
 
   /**
@@ -64,7 +70,7 @@ export class WorkoutsScreen extends BaseScreen {
   }
 
   /**
-   * Tap on a workout item to view its details.
+   * Tap on a workout item.
    */
   async tapWorkout(index: number): Promise<void> {
     await this.tapElement(`workout-list-item-${index}`);
@@ -78,20 +84,66 @@ export class WorkoutsScreen extends BaseScreen {
   }
 
   /**
-   * Swipe left on a workout item to reveal the delete action.
+   * Type into the searchbar to filter the list.
+   *
+   * ion-searchbar keeps its native <input> in a shadow root, so this goes
+   * through the shared editable-control helper rather than setting a value on
+   * the host. Filtering is client-side over the already-loaded list
+   * (WorkoutsPage.filteredWorkouts), so no network round trip is involved.
    */
-  async swipeToDelete(index: number): Promise<void> {
-    await this.swipeLeftOnElement(`workout-list-item-${index}`);
+  async search(term: string): Promise<void> {
+    await this.typeIntoField(this.selectors.searchBar, term);
+    // Let Angular re-render the filtered list before callers count items.
+    await browser.pause(500);
   }
 
   /**
-   * Perform a pull-to-refresh gesture on the workout list.
-   * Swipes down from the top of the list to trigger a content refresh.
+   * Clear the searchbar, restoring the unfiltered list.
+   *
+   * clearValue() alone is not enough, and the failure is silent: it empties the
+   * inner <input> but does not drive ion-searchbar's `ionInput` output, so
+   * Angular's searchTerm keeps its previous value and the list stays filtered
+   * while the box looks empty. Tapping the component's own clear button is both
+   * what a user does and what actually emits the event; the keystroke fallback
+   * covers the case where the button is not rendered (Ionic only shows it while
+   * the searchbar is focused).
    */
-  async pullToRefresh(): Promise<void> {
-    await this.swipeDown(0.6);
-    // Wait for refresh to complete
-    await browser.pause(2000);
+  async clearSearch(): Promise<void> {
+    // Focusing is what reveals the clear button.
+    await this.tapField(this.selectors.searchBar);
+
+    const host = await $(this.sel(this.selectors.searchBar));
+    const clearButton = await host.shadow$('.searchbar-clear-button');
+
+    if (await clearButton.isExisting().catch(() => false)) {
+      await clearButton.click();
+    } else {
+      const current = await this.getSearchValue();
+      await browser.keys(new Array(current.length).fill('Backspace'));
+    }
+
+    await browser.pause(500);
+  }
+
+  /**
+   * Read the searchbar's current text from its inner native input.
+   */
+  async getSearchValue(): Promise<string> {
+    const host = await $(this.sel(this.selectors.searchBar));
+    const input = await host.shadow$('input');
+    return (await input.getValue()) ?? '';
+  }
+
+  /**
+   * Swipe left on a workout item to reveal a delete action.
+   *
+   * Kept ready deliberately. The list renders plain ion-items with no
+   * ion-item-sliding wrapper, so there is nothing to reveal yet — see the
+   * skipped spec and defect #2 in the README. When a delete affordance lands,
+   * this is the gesture that drives it.
+   */
+  async swipeToDelete(index: number): Promise<void> {
+    await this.swipeLeftOnElement(`workout-list-item-${index}`);
   }
 
   /**
@@ -102,19 +154,11 @@ export class WorkoutsScreen extends BaseScreen {
   }
 
   /**
-   * Check if the offline indicator is visible.
-   */
-  async isOfflineIndicatorDisplayed(): Promise<boolean> {
-    return this.isDisplayed(this.selectors.offlineIndicator);
-  }
-
-  /**
-   * Scroll through the workout list to load more items.
+   * Scroll through the workout list.
    */
   async scrollThroughList(scrollCount = 3): Promise<void> {
     for (let i = 0; i < scrollCount; i++) {
-      await this.swipeUp(0.4);
-      await browser.pause(500);
+      await this.scrollByViewport(0.6);
     }
   }
 
@@ -126,17 +170,29 @@ export class WorkoutsScreen extends BaseScreen {
   }
 
   /**
-   * Count visible workout items by checking sequential indices.
+   * Count the workout items currently rendered.
+   *
+   * Queries the DOM for every `workout-list-item-*` at once. The previous
+   * implementation probed indices one at a time and stopped at the first that
+   * was not *displayed*, which under-counted the moment an item sat below the
+   * fold — the rows exist in the DOM whether or not they are scrolled into
+   * view, and this list is not virtualised.
    */
   async getVisibleWorkoutCount(): Promise<number> {
-    let count = 0;
-    for (let i = 0; i < 50; i++) {
-      if (await this.isDisplayed(`workout-list-item-${i}`)) {
-        count++;
-      } else {
-        break;
+    const items = await $$('[data-testid^="workout-list-item-"]');
+    return items.length;
+  }
+
+  /**
+   * Whether a workout with the given exercise name is present in the list.
+   */
+  async hasWorkoutNamed(exerciseType: string): Promise<boolean> {
+    const names = await $$('[data-testid^="workout-name-"]');
+    for (const name of names) {
+      if ((await name.getText()).trim() === exerciseType) {
+        return true;
       }
     }
-    return count;
+    return false;
   }
 }

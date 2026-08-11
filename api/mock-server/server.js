@@ -54,9 +54,21 @@ const USER_PASSWORDS = {
 /**
  * Allow any localhost origin. CI serves the built app on whichever port is free,
  * so pinning an explicit list here caused cross-origin failures in the pipeline.
+ *
+ * The Capacitor entries are not decoration. On Android the app is served by the
+ * native bridge from `https://localhost` — no port — so the browser sends
+ * `Origin: https://localhost`, which the original `http://localhost:\d+`
+ * pattern rejected on two counts (scheme and mandatory port). Every API call
+ * from the emulator failed CORS preflight before it ever reached a route, which
+ * is part of why the mobile login tests could not run against a real backend.
+ * `capacitor://localhost` is the equivalent origin on iOS and is included so the
+ * mock is ready when that suite lands.
  */
 server.use(cors({
-  origin: /^http:\/\/localhost:\d+$/,
+  origin: [
+    /^https?:\/\/localhost(:\d+)?$/,
+    /^capacitor:\/\/localhost$/,
+  ],
   credentials: true,
 }));
 

@@ -14,11 +14,11 @@ be run, not just read.
 |---|---|
 | **Web E2E** | 36 passing across 5 engines — Chromium, Firefox, WebKit, Mobile Chrome, Mobile Safari |
 | **API + contract** | 40 passing — CRUD, auth, JSON-schema contract enforcement (ajv) |
-| **Mobile E2E** | Appium/Capacitor login suite green on **Android API 33 and 34**, on real emulators |
+| **Mobile E2E** | 23 passing on real Android emulators — login and workouts, driving the Capacitor WebView against a live API |
 | **Performance** | k6 load / stress / spike, thresholds enforced |
 | **Quality gates** | ESLint + TypeScript strict, run before anything else |
 
-Two real defects found by this suite are [documented, not hidden](#current-status--known-gaps),
+Three real defects found by this suite are [documented, not hidden](#current-status--known-gaps),
 and the tests that cover them are committed as skipped specs so they start
 enforcing the moment the defects are fixed.
 
@@ -26,8 +26,10 @@ The hybrid-mobile work is the deep end: Capacitor renders the UI in a WebView,
 so `data-testid` is a DOM attribute the native automation driver cannot see.
 Getting that suite green meant WEBVIEW context switching (and recovering it
 after an app relaunch tears the renderer down), CSS selectors against the DOM,
-and typing into Ionic's shadow-DOM inputs. Written up in
-[tests/e2e-mobile/MOBILE.md](tests/e2e-mobile/MOBILE.md).
+typing into Ionic's shadow-DOM inputs, and then getting the WebView to reach a
+host-side API at all — an emulator's `localhost` is the emulator, and Capacitor
+serves the app over `https://` from an origin the mock's CORS rejected. Written
+up in [tests/e2e-mobile/MOBILE.md](tests/e2e-mobile/MOBILE.md).
 
 ## Architecture
 
@@ -124,14 +126,28 @@ Point the suites at another environment with `BASE_URL` and `API_BASE_URL`.
 The mock server must stay on port 3000 unless you also rebuild the app — the
 Ionic build bakes `src/environments/environment.ts` in at compile time.
 
-### 4. Run Mobile Tests (requires Android emulator)
+### 4. Run Mobile Tests (requires a booted Android emulator)
+
+The mock server must be running on the host first — the suite tunnels to it with
+`adb reverse` and fails fast with an explicit message if it is not up. The app
+has to be built with `MOBILE_E2E=1`, which is what relaxes the WebView's
+transport rules enough to reach an `http://` API from an `https://` page.
 
 ```bash
-cd tests/e2e-mobile
-npm install
-npx appium &
-npx wdio run wdio.conf.ts
+cd app && MOBILE_E2E=1 npm run build && MOBILE_E2E=1 npx cap sync android
 ```
+
+```bash
+cd app/android && ./gradlew assembleDebug
+```
+
+```bash
+cd tests/e2e-mobile && npm ci && npm test
+```
+
+Use `npm test`, not `npx wdio` — npx from the wrong directory silently fetches
+the deprecated `wdio@6` scaffolder and hangs. See
+[MOBILE.md](tests/e2e-mobile/MOBILE.md) for why each step is needed.
 
 ### 5. Start the Real .NET API (requires Docker)
 
@@ -158,9 +174,12 @@ docker-compose up -d
 - Responsive: mobile/tablet viewports, orientation
 
 ### Mobile E2E (Appium/WebdriverIO on Android)
-- Login: **proven green on API 33 + 34** — 7 passing, 5 skipped (documented)
-- Workouts / Add-workout / Gestures / Device features: being migrated to the
-  webview approach screen by screen (see [MOBILE.md](tests/e2e-mobile/MOBILE.md))
+- Login: 11 passing, 2 skipped — including real authenticated round trips to the
+  API from inside the emulator
+- Workouts: 12 passing, 4 skipped — list rendering, search, the full
+  add-workout flow through `ion-select`'s alert overlay, and navigation
+- Gestures / Device features: being migrated to the webview approach screen by
+  screen (see [MOBILE.md](tests/e2e-mobile/MOBILE.md))
 
 ### API (40 passing, 1 skipped)
 - Auth: login/register, token handling
@@ -187,7 +206,8 @@ below.)
 **nightly-regression.yml** — runs at 2am UTC:
 - Full browser matrix (5 browsers: Chromium, Firefox, WebKit, Mobile Chrome, Mobile Safari)
 - Performance tests (k6 load + spike)
-- Mobile E2E on the Android emulator matrix (opt-in via `-f run_mobile=true`)
+- Mobile E2E on the Android emulator matrix (API 33 + 34); skip a manual run
+  with `-f run_mobile=false`
 - Slack notification on failure (when `SLACK_WEBHOOK_URL` is set)
 
 ## Documentation
@@ -207,8 +227,8 @@ they are.
 | API + contract tests | Green in CI |
 | Web E2E (Chromium, Firefox, Mobile Chrome) | Green in CI |
 | Allure report generation | Green in CI |
-| Mobile E2E — login (Appium/Android) | **Green on Android API 33 + 34** (opt-in nightly job) |
-| Mobile E2E — other screens | Pending — being rewritten screen by screen, see [MOBILE.md](tests/e2e-mobile/MOBILE.md) |
+| Mobile E2E — login + workouts (Appium/Android) | **Green on real emulators**, runs on the nightly |
+| Mobile E2E — gestures, device features | Pending — being rewritten screen by screen, see [MOBILE.md](tests/e2e-mobile/MOBILE.md) |
 | k6 performance | Green in CI (nightly) |
 
 **Mobile E2E: the login screen is proven end-to-end on real emulators.** The
@@ -227,25 +247,40 @@ to the correct hybrid approach and now passes on both Android API 33 and 34:
 - read `ion-button`'s reflected `disabled` attribute (`isEnabled()` always
   reports true for a custom element).
 
-Seven login tests pass reliably; five are skipped with documented reasons —
-three that need the mock API reachable from inside the emulator (next
-iteration), and two soft-keyboard-visibility checks that a headless emulator
-does not report reliably (they passed on API 34 but failed every retry on API
-33). The other screens (`workouts`, `add-workout`, `gestures`,
-`device-features`) still carry the old selector mismatches and are being brought
-online the same way. Full detail and rationale in
-[tests/e2e-mobile/MOBILE.md](tests/e2e-mobile/MOBILE.md).
+**The app now talks to a real API from inside the emulator.** The login tests
+that needed a backend were previously skipped, because a host-side mock is not
+reachable from an emulator by default. Three independent things had to be fixed,
+and each one fails the request silently — the UI just sits on a spinner:
 
-The mobile job is opt-in (excluded from the PR pipeline; off by default on the
-nightly) because the not-yet-migrated screens can't pass and a timed-out
-emulator job is *cancelled* rather than failed, which would drag a run's
-conclusion down. Run the proven login suite deliberately with:
+- **the emulator's `localhost` is the emulator.** `adb reverse tcp:3000` tunnels
+  it to the host, which keeps the app's URL on `localhost` and so needs no
+  change to `environment.ts`. The `10.0.2.2` host alias was rejected: it would
+  mean testing an app built differently from the one that ships, and it is not a
+  trustworthy origin, which walks straight into the next problem;
+- **CORS rejected the WebView's origin.** Capacitor serves the app from
+  `https://localhost` — no port — and the mock's allowlist required
+  `http://` *and* a port, so every request failed preflight before reaching a
+  route;
+- **the page is `https://` and the API is `http://`.** That is mixed content,
+  and Android blocks cleartext by default from API 28 on. The E2E build opts
+  into both, gated behind `MOBILE_E2E=1` so a normal build stays hardened.
+
+Two login tests remain skipped: soft-keyboard-visibility checks that a headless
+emulator does not report reliably (they passed on API 34 but failed every retry
+on API 33). `workouts.spec.ts` has since been migrated the same way;
+`gestures` and `device-features` still carry the old selector mismatches. Full
+detail and rationale in [tests/e2e-mobile/MOBILE.md](tests/e2e-mobile/MOBILE.md).
+
+The mobile job now runs on the nightly schedule rather than by request. It stays
+out of the PR pipeline, and keeps `continue-on-error` for now, because an
+emulator job that exceeds its timeout is *cancelled* rather than failed, which
+would drag a run's conclusion down regardless. Skip it on a manual run with:
 
 ```bash
-gh workflow run "Nightly Regression" -f run_mobile=true
+gh workflow run "Nightly Regression" -f run_mobile=false
 ```
 
-**Two known defects are documented rather than papered over:**
+**Three known defects are documented rather than papered over:**
 
 1. `GET /api/workouts` requires a bearer token but never scopes results to the
    caller — it returns every user's records unless an explicit `?userId=` is
@@ -256,6 +291,21 @@ gh workflow run "Nightly Regression" -f run_mobile=true
    behaviour is recorded and starts enforcing the moment it is fixed.
 2. The workout list has no delete affordance. The spec for it is skipped with a
    comment rather than deleted, and the page object method is kept ready.
+3. **Adding a workout does not update the list** — found by the mobile
+   migration. The record saves, and the user is returned to a list that does not
+   contain it; it appears only on a fresh entry into the page. `WorkoutsPage`
+   loads in `ngOnInit`, but returning from `/workouts/add` pops back to a view
+   Ionic's router outlet already has cached, so the component is never
+   re-created and `ngOnInit` never runs again (`ionViewWillEnter` is the hook
+   that fires on every entry). The mobile specs assert the API write and the UI
+   render separately, which is how the two were told apart: the save is proven
+   to land, and only the render is skipped.
+
+   Verified on Android. The web suite does not currently contradict or confirm
+   it — `should create a new workout when the form is filled and submitted`
+   stops at the redirect to `/workouts` and never inspects the list, so it has
+   the same blind spot the mobile suite had before the assertions were split.
+   Checking it there is the obvious next step.
 
 ## Key Framework Design Decisions
 
