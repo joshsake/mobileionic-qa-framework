@@ -149,6 +149,15 @@ export class BaseScreen {
   }
 
   /**
+   * Clear an input field, going through the same shadow-DOM-aware lookup as
+   * typeIntoField so callers do not need the inner control themselves.
+   */
+  async clearField(testId: string): Promise<void> {
+    const control = await this.editableControl(testId);
+    await control.clearValue();
+  }
+
+  /**
    * Focus a field by tapping its inner native control.
    *
    * Tapping the ion-input host does not reliably move focus to the <input>

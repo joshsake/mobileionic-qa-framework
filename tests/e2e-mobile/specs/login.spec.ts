@@ -1,20 +1,30 @@
 import { LoginScreen } from '../screens/login.screen';
+import { DashboardScreen } from '../screens/dashboard.screen';
 
 /*
- * Iteration 1 of the hybrid-mobile fix proves the automation *bridge* — that a
- * booted emulator, the WEBVIEW context switch, CSS data-testid selectors and
- * the native device commands (keyboard, orientation) all work against the
- * Capacitor app. Those tests need no backend.
+ * This suite proves the automation *bridge* — a booted emulator, the WEBVIEW
+ * context switch, CSS data-testid selectors and the native device commands
+ * (keyboard, orientation) working against the Capacitor app — and, since the
+ * emulator-to-host tunnel landed, real authenticated round trips to the mock
+ * API as well.
  *
- * The three tests that drive a real login are skipped for now: the app's
- * webview calls the mock API over the network, and reaching a host-side mock
- * from inside the emulator needs its own plumbing (adb reverse / 10.0.2.2 plus
- * cleartext, and the app is served over https so an http API call is mixed
- * content). That is tracked as the next iteration in MOBILE.md; the credentials
- * below already match the mock so those tests are correct once it lands.
+ * The three login-over-the-network tests were previously skipped because the
+ * app's webview could not reach a host-side mock. Three separate things had to
+ * be true for that to work, and all three are now handled outside this file:
+ *
+ *   1. `adb reverse tcp:3000` maps the emulator's localhost:3000 onto the
+ *      host's, so environment.ts's http://localhost:3000/api resolves
+ *      (wdio.conf.ts onPrepare).
+ *   2. The mock's CORS allowlist accepts `https://localhost`, the origin
+ *      Capacitor serves the app from on Android (api/mock-server/server.js).
+ *   3. The E2E build opts into cleartext + mixed content, because the page is
+ *      https:// and the API is http:// (app/capacitor.config.ts, MOBILE_E2E=1).
+ *
+ * See MOBILE.md for the full write-up.
  */
 describe('Login Screen - Mobile', () => {
   const loginScreen = new LoginScreen();
+  const dashboardScreen = new DashboardScreen();
 
   const validUser = {
     email: 'test@example.com',
@@ -43,26 +53,48 @@ describe('Login Screen - Mobile', () => {
       expect(title).toContain('Sign In');
     });
 
-    // Needs the mock API reachable from the emulator — see MOBILE.md (networking).
-    it.skip('should navigate to dashboard after entering valid credentials', async () => {
+    it('should navigate to dashboard after entering valid credentials', async () => {
       await loginScreen.login(validUser.email, validUser.password);
 
-      // Verify we left the login screen (navigated to dashboard)
-      await browser.pause(3000);
-      const stillOnLogin = await loginScreen.isLoginScreenDisplayed();
-      expect(stillOnLogin).toBe(false);
+      // Assert arrival, not just departure: "the login card is gone" is also
+      // true of a blank screen or a torn-down renderer. Waiting for the
+      // dashboard's own element proves the navigation actually completed.
+      await dashboardScreen.waitForDashboard();
+      expect(await dashboardScreen.isDashboardDisplayed()).toBe(true);
+      expect(await loginScreen.isLoginScreenDisplayed()).toBe(false);
+    });
+
+    it('should load workout data from the API after logging in', async () => {
+      await loginScreen.login(validUser.email, validUser.password);
+      await dashboardScreen.waitForDashboard();
+
+      // The tile is rendered from GET /api/workouts, so a non-zero count is
+      // the end-to-end evidence that an authenticated request left the webview,
+      // crossed the adb tunnel, passed CORS and came back — none of which the
+      // navigation assertion above actually proves on its own.
+      await driver.waitUntil(
+        async () => (await dashboardScreen.getTotalWorkoutsText()).trim() !== '0',
+        {
+          timeout: 15000,
+          timeoutMsg: 'Dashboard still shows 0 workouts — the API call did not return data',
+        }
+      );
     });
   });
 
   describe('Failed Login', () => {
-    // Needs the mock API reachable from the emulator — see MOBILE.md (networking).
-    it.skip('should display an error message with invalid credentials', async () => {
+    it('should display an error message with invalid credentials', async () => {
       await loginScreen.login('wrong@example.com', 'WrongPass!');
 
-      await browser.pause(2000);
-      expect(await loginScreen.isErrorMessageDisplayed()).toBe(true);
+      // The mock answers unknown credentials with 401 + { message }, which the
+      // login page surfaces in its error element.
+      await driver.waitUntil(async () => loginScreen.isErrorMessageDisplayed(), {
+        timeout: 15000,
+        timeoutMsg: 'No error message appeared after submitting invalid credentials',
+      });
       const errorText = await loginScreen.getErrorMessageText();
       expect(errorText.length).toBeGreaterThan(0);
+      expect(await loginScreen.isLoginScreenDisplayed()).toBe(true);
     });
 
     it('should keep the login button disabled when password is empty', async () => {
@@ -194,16 +226,14 @@ describe('Login Screen - Mobile', () => {
       expect(await loginScreen.isLoginScreenDisplayed()).toBe(true);
     });
 
-    // Needs the mock API reachable from the emulator — see MOBILE.md (networking).
-    it.skip('should successfully login in landscape orientation', async () => {
+    it('should successfully login in landscape orientation', async () => {
       await driver.setOrientation('LANDSCAPE');
       await browser.pause(1000);
 
       await loginScreen.login(validUser.email, validUser.password);
-      await browser.pause(3000);
 
-      const stillOnLogin = await loginScreen.isLoginScreenDisplayed();
-      expect(stillOnLogin).toBe(false);
+      await dashboardScreen.waitForDashboard();
+      expect(await dashboardScreen.isDashboardDisplayed()).toBe(true);
     });
   });
 });

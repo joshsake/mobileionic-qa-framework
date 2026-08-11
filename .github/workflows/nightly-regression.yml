@@ -7,10 +7,10 @@ on:
     inputs:
       run_mobile:
         description: >
-          Run the Appium suite. Off by default: it cannot pass yet (see the
-          mobile-regression job) and costs an hour before timing out.
+          Run the Appium suite. The migrated screens (login, workouts) pass on
+          Android API 33 and 34; untick to skip the ~15 min emulator matrix.
         type: boolean
-        default: false
+        default: true
 
 concurrency:
   group: nightly-regression
@@ -190,23 +190,30 @@ jobs:
     name: Mobile Regression (${{ matrix.device }} / API ${{ matrix.api-level }})
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    # Opt-in only — never on the schedule, and off by default even when the
-    # workflow is triggered by hand.
+    # Runs on the nightly schedule, and on manual runs unless explicitly
+    # unticked. `inputs` is null on a schedule trigger, so the event name has to
+    # be checked separately or the job would silently never run at night.
     #
-    # login.spec.ts is proven and passes on Android API 33 and 34 (WEBVIEW
-    # context switching + CSS data-testid selectors — see
-    # tests/e2e-mobile/MOBILE.md). wdio.conf.ts scopes the run to it.
+    # login.spec.ts and workouts.spec.ts are migrated to the hybrid approach
+    # (WEBVIEW context + CSS data-testid selectors — see
+    # tests/e2e-mobile/MOBILE.md) and wdio.conf.ts scopes the run to them; the
+    # gestures and device-feature specs are still excluded.
     #
-    # This stays opt-in because emulator jobs are slow (~10 min) and a job that
-    # exceeds its timeout is *cancelled* rather than failed, which drags the
-    # whole run's conclusion down regardless of continue-on-error. The remaining
-    # screens still carry the old selector mismatches and are being migrated one
-    # at a time.
+    # continue-on-error stays on for now: emulator jobs are slow and a job that
+    # exceeds its timeout is *cancelled* rather than failed, which would drag the
+    # whole run's conclusion down. Drop it once the nightly has a run of green
+    # mobile results behind it.
     #
-    # Run it deliberately with:
-    #   gh workflow run "Nightly Regression" -f run_mobile=true
-    if: inputs.run_mobile
+    # Skip it on a manual run with:
+    #   gh workflow run "Nightly Regression" -f run_mobile=false
+    if: github.event_name == 'schedule' || inputs.run_mobile
     continue-on-error: true
+    # Relaxes the WebView transport rules so the app can reach the host-side
+    # mock over the adb tunnel. Set for the whole job because `cap sync` bakes
+    # it into the APK's capacitor.config.json, and the suite needs it at run
+    # time — see app/capacitor.config.ts.
+    env:
+      MOBILE_E2E: '1'
     strategy:
       fail-fast: false
       matrix:
